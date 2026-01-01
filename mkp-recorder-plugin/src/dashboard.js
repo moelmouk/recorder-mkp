@@ -276,6 +276,10 @@ const ui = {
         e.stopPropagation();
         this.exportMacro(index);
       });
+      item.querySelector('.btn-export-uiv')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.exportMacroUIVision(index);
+      });
       item.querySelector('.btn-delete')?.addEventListener('click', (e) => {
         e.stopPropagation();
         this.deleteMacro(index);
