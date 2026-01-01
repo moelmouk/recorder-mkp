@@ -508,12 +508,13 @@ const ui = {
     appState.currentMacro.commands.push({
       cmd: cmd.cmd,
       target: cmd.target || '',
-      value: cmd.value || ''
+      value: cmd.value || '',
+      targetOptions: cmd.targetOptions || []
     });
 
     storage.saveMacros(appState.macros);
     this.renderCommands();
-    this.log(`Enregistré: ${cmd.cmd} ${cmd.target ? '→ ' + cmd.target.substring(0, 30) : ''}`, 'info');
+    this.log(`Enregistré: ${cmd.cmd} ${cmd.target ? '→ ' + cmd.target.substring(0, 40) : ''}`, 'info');
 
     // Scroll to bottom
     const container = this.elements.commandsBody.closest('.commands-container');
