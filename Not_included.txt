@@ -1,0 +1,10 @@
+*** Not included ***
+
+The UI.Vision open-source code published in this repository includes the complete, ready-to-run core extension. 
+
+The repository and the open-source license does not include:
+
+Source code of the binary UI.Vision XModules extensions modules.
+
+The UI.Vision XModules are cross-platform desktop software and are installed separately. They communicate with the core browser extension via native messaging. They are not included with the UI.Vision Core extension that you find in the Chrome and Firefox stores. You can download them from this website: https://ui.vision/rpa/x
+
