@@ -249,7 +249,8 @@ const ui = {
         <span class="macro-item-name">${this.escapeHtml(macro.name)}</span>
         <div class="macro-item-actions">
           <button class="btn-rename" title="Renommer">✏️</button>
-          <button class="btn-export" title="Exporter">📥</button>
+          <button class="btn-export" title="Exporter (format natif)">📥</button>
+          <button class="btn-export-uiv" title="Exporter (format UI.Vision)">📤</button>
           <button class="btn-delete" title="Supprimer">🗑️</button>
         </div>
       </li>
