@@ -55,6 +55,7 @@
       return siblings.length > 1 ? `${tag}[${index}]` : tag;
     },
 
+    // XPath absolu (comme UI.Vision)
     xpath(dom) {
       if (!dom || dom.nodeType !== 1) return '';
       
@@ -79,8 +80,38 @@
         current = current.parentNode;
       }
       
-      const prefix = parts[0] === 'html' || parts[0]?.startsWith('*[@id') ? '/' : '//';
+      // Toujours commencer par // pour les ID, / pour le chemin complet
+      const prefix = parts[0]?.startsWith('*[@id') ? '//' : '/';
       return prefix + parts.join('/');
+    },
+
+    // XPath court (alternative)
+    xpathShort(dom) {
+      if (!dom || dom.nodeType !== 1) return '';
+      
+      // Si a un ID
+      if (dom.id) {
+        return `//*[@id="${dom.id}"]`;
+      }
+      
+      // Si a un name
+      const name = dom.getAttribute('name');
+      if (name) {
+        const tag = dom.tagName.toLowerCase();
+        return `//${tag}[@name="${name}"]`;
+      }
+      
+      // Sinon XPath relatif simple
+      const tag = dom.tagName.toLowerCase();
+      const parent = dom.parentNode;
+      if (parent) {
+        const siblings = Array.from(parent.children).filter(el => el.tagName === dom.tagName);
+        if (siblings.length > 1) {
+          const index = siblings.indexOf(dom) + 1;
+          return `//${tag}[${index}]`;
+        }
+      }
+      return `//${tag}`;
     },
 
     cssSelector(dom) {
