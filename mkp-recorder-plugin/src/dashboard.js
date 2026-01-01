@@ -36,8 +36,29 @@ const storage = {
     });
   },
 
-  async exportMacro(macro) {
-    const blob = new Blob([JSON.stringify(macro, null, 2)], { type: 'application/json' });
+  // Export au format UI.Vision compatible
+  async exportMacro(macro, useUIVisionFormat = false) {
+    let exportData;
+    
+    if (useUIVisionFormat) {
+      // Format UI.Vision
+      exportData = {
+        Name: macro.name,
+        CreationDate: macro.createdAt ? new Date(macro.createdAt).toISOString().split('T')[0].replace(/-/g, '-') : new Date().toISOString().split('T')[0],
+        Commands: macro.commands.map(cmd => ({
+          Command: cmd.cmd,
+          Target: cmd.target || '',
+          Value: cmd.value || '',
+          Targets: cmd.targetOptions || [],
+          Description: ''
+        }))
+      };
+    } else {
+      // Format natif
+      exportData = macro;
+    }
+    
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -56,13 +77,36 @@ const storage = {
     URL.revokeObjectURL(url);
   },
 
+  // Import supportant les deux formats
   async importMacros(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         try {
           const data = JSON.parse(e.target.result);
-          resolve(Array.isArray(data) ? data : [data]);
+          let macros = Array.isArray(data) ? data : [data];
+          
+          // Convertir du format UI.Vision si nécessaire
+          macros = macros.map(m => {
+            if (m.Commands && m.Name) {
+              // Format UI.Vision détecté
+              return {
+                id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                name: m.Name,
+                commands: m.Commands.map(cmd => ({
+                  cmd: cmd.Command,
+                  target: cmd.Target || '',
+                  value: cmd.Value || '',
+                  targetOptions: cmd.Targets || []
+                })),
+                createdAt: m.CreationDate ? new Date(m.CreationDate).toISOString() : new Date().toISOString()
+              };
+            }
+            // Format natif
+            return m;
+          });
+          
+          resolve(macros);
         } catch (error) {
           reject(new Error('Invalid JSON file'));
         }
