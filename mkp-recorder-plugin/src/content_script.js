@@ -140,6 +140,16 @@
       const candidates = [];
       const id = $dom.getAttribute('id');
       const name = $dom.getAttribute('name');
+      const tag = $dom.tagName.toLowerCase();
+      const isLink = tag === 'a';
+      
+      // Texte du lien
+      if (isLink) {
+        const linkText = this.domText($dom);
+        if (linkText && linkText.length > 0 && linkText.length < 50) {
+          candidates.push(`linkText=${linkText}`);
+        }
+      }
 
       // ID (préféré)
       if (id && id.length && !id.match(/^\d/)) {
@@ -151,10 +161,24 @@
         candidates.push(`name=${name}`);
       }
 
-      // XPath
+      // XPath avec ID (si disponible)
+      if (id && id.length && !id.match(/^\d/)) {
+        candidates.push(`xpath=//*[@id="${id}"]`);
+        candidates.push(`xpath=//${tag}[@id='${id}']`);
+      }
+
+      // XPath complet
       try {
         const xp = this.xpath($dom);
         if (xp) candidates.push('xpath=' + xp);
+      } catch (e) {}
+
+      // XPath court
+      try {
+        const xpShort = this.xpathShort($dom);
+        if (xpShort && !candidates.includes('xpath=' + xpShort)) {
+          candidates.push('xpath=' + xpShort);
+        }
       } catch (e) {}
 
       // CSS
