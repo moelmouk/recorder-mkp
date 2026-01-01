@@ -453,7 +453,38 @@ const ui = {
     this.elements.editTarget.value = cmd.target || '';
     this.elements.editValue.value = cmd.value || '';
     
+    // Afficher les alternatives de target si disponibles
+    this.showTargetOptions(cmd.targetOptions || []);
+    
     this.showCommandEditor();
+  },
+
+  showTargetOptions(options) {
+    let container = document.getElementById('target-options-container');
+    
+    if (!container) {
+      // Créer le container s'il n'existe pas
+      const formGroup = this.elements.editTarget.closest('.form-group');
+      container = document.createElement('div');
+      container.id = 'target-options-container';
+      container.style.cssText = 'margin-top: 8px; margin-left: 92px;';
+      formGroup.appendChild(container);
+    }
+    
+    if (options.length > 1) {
+      container.innerHTML = `
+        <label style="font-size:11px;color:#888;">Alternatives:</label>
+        <select id="target-alternatives" style="margin-left:8px;background:#3c3c3c;border:1px solid #555;color:#e0e0e0;padding:4px 8px;border-radius:4px;font-size:12px;max-width:400px;">
+          ${options.map(opt => `<option value="${this.escapeHtml(opt)}">${this.escapeHtml(opt.length > 60 ? opt.substring(0, 60) + '...' : opt)}</option>`).join('')}
+        </select>
+      `;
+      
+      document.getElementById('target-alternatives').addEventListener('change', (e) => {
+        this.elements.editTarget.value = e.target.value;
+      });
+    } else {
+      container.innerHTML = '';
+    }
   },
 
   async saveCommand() {
