@@ -3,6 +3,8 @@
  * Interface utilisateur principale
  */
 
+console.log('MKP Dashboard loading...');
+
 // ==================== ÉTAT GLOBAL ====================
 
 const appState = {
@@ -74,14 +76,15 @@ const storage = {
 // ==================== INTERFACE UTILISATEUR ====================
 
 const ui = {
-  // Éléments DOM
   elements: {},
 
   init() {
+    console.log('UI initializing...');
     this.cacheElements();
     this.bindEvents();
     this.loadMacros();
     this.initBackgroundConnection();
+    this.log('Dashboard initialisé', 'info');
   },
 
   cacheElements() {
@@ -156,11 +159,16 @@ const ui = {
   },
 
   initBackgroundConnection() {
+    console.log('Initializing background connection...');
+    
     // Inform background that dashboard is open
-    chrome.runtime.sendMessage({ type: 'DASHBOARD_INIT' });
+    chrome.runtime.sendMessage({ type: 'DASHBOARD_INIT' }, (response) => {
+      console.log('Dashboard init response:', response);
+    });
 
     // Listen for messages from background
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      console.log('Dashboard received:', message.type, message);
       this.handleBackgroundMessage(message);
       sendResponse({ received: true });
       return true;
@@ -172,6 +180,7 @@ const ui = {
     
     switch (type) {
       case 'RECORD_ADD_COMMAND':
+        console.log('Adding recorded command:', data);
         this.addRecordedCommand(data);
         break;
     }
@@ -185,13 +194,15 @@ const ui = {
     
     if (appState.macros.length > 0) {
       this.selectMacro(0);
+    } else {
+      this.log('Créez une nouvelle macro pour commencer', 'info');
     }
   },
 
   renderMacroList() {
     const html = appState.macros.map((macro, index) => `
       <li class="macro-item ${index === appState.currentMacroIndex ? 'active' : ''}" data-index="${index}">
-        <span class="macro-item-name">${macro.name}</span>
+        <span class="macro-item-name">${this.escapeHtml(macro.name)}</span>
         <div class="macro-item-actions">
           <button class="btn-rename" title="Renommer">✏️</button>
           <button class="btn-export" title="Exporter">📥</button>
@@ -200,7 +211,7 @@ const ui = {
       </li>
     `).join('');
     
-    this.elements.macroList.innerHTML = html;
+    this.elements.macroList.innerHTML = html || '<li style="padding:10px;color:#888;">Aucune macro</li>';
 
     // Bind macro item events
     this.elements.macroList.querySelectorAll('.macro-item').forEach((item) => {
@@ -212,9 +223,18 @@ const ui = {
         }
       });
 
-      item.querySelector('.btn-rename').addEventListener('click', () => this.renameMacro(index));
-      item.querySelector('.btn-export').addEventListener('click', () => this.exportMacro(index));
-      item.querySelector('.btn-delete').addEventListener('click', () => this.deleteMacro(index));
+      item.querySelector('.btn-rename')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.renameMacro(index);
+      });
+      item.querySelector('.btn-export')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.exportMacro(index);
+      });
+      item.querySelector('.btn-delete')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.deleteMacro(index);
+      });
     });
   },
 
@@ -349,19 +369,19 @@ const ui = {
     const commands = appState.currentMacro.commands;
     
     if (commands.length === 0) {
-      this.elements.commandsBody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;padding:20px;">Aucune commande. Cliquez sur Enregistrer ou ajoutez une commande.</td></tr>';
+      this.elements.commandsBody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;padding:20px;">Aucune commande. Cliquez sur Enregistrer ou ajoutez manuellement.</td></tr>';
       return;
     }
 
     const html = commands.map((cmd, index) => {
       let rowClass = '';
       if (index === appState.playingIndex) rowClass = 'playing';
-      if (index === appState.selectedCommandIndex) rowClass = 'selected';
+      else if (index === appState.selectedCommandIndex) rowClass = 'selected';
       
       return `
         <tr class="${rowClass}" data-index="${index}">
           <td class="col-num">${index + 1}</td>
-          <td class="col-command">${cmd.cmd}</td>
+          <td class="col-command">${this.escapeHtml(cmd.cmd)}</td>
           <td class="col-target target-cell" title="${this.escapeHtml(cmd.target || '')}">${this.escapeHtml(cmd.target || '')}</td>
           <td class="col-value value-cell" title="${this.escapeHtml(cmd.value || '')}">${this.escapeHtml(cmd.value || '')}</td>
           <td class="col-actions">
@@ -388,10 +408,22 @@ const ui = {
         }
       });
 
-      row.querySelector('.btn-edit')?.addEventListener('click', () => this.editCommand(index));
-      row.querySelector('.btn-move-up')?.addEventListener('click', () => this.moveCommand(index, -1));
-      row.querySelector('.btn-move-down')?.addEventListener('click', () => this.moveCommand(index, 1));
-      row.querySelector('.btn-delete-cmd')?.addEventListener('click', () => this.deleteCommand(index));
+      row.querySelector('.btn-edit')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.editCommand(index);
+      });
+      row.querySelector('.btn-move-up')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.moveCommand(index, -1);
+      });
+      row.querySelector('.btn-move-down')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.moveCommand(index, 1);
+      });
+      row.querySelector('.btn-delete-cmd')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.deleteCommand(index);
+      });
     });
   },
 
@@ -406,7 +438,7 @@ const ui = {
       return;
     }
 
-    appState.editingCommandIndex = -1; // New command
+    appState.editingCommandIndex = -1;
     this.elements.editCommand.value = 'click';
     this.elements.editTarget.value = '';
     this.elements.editValue.value = '';
@@ -432,10 +464,8 @@ const ui = {
     };
 
     if (appState.editingCommandIndex === -1) {
-      // New command
       appState.currentMacro.commands.push(cmd);
     } else {
-      // Update existing
       appState.currentMacro.commands[appState.editingCommandIndex] = cmd;
     }
 
@@ -469,9 +499,11 @@ const ui = {
 
   addRecordedCommand(cmd) {
     if (!appState.currentMacro) {
-      this.log('Créez ou sélectionnez une macro pour enregistrer', 'warning');
+      this.log('Aucune macro sélectionnée! Créez ou sélectionnez une macro.', 'error');
       return;
     }
+
+    console.log('Adding command to macro:', cmd);
 
     appState.currentMacro.commands.push({
       cmd: cmd.cmd,
@@ -481,11 +513,15 @@ const ui = {
 
     storage.saveMacros(appState.macros);
     this.renderCommands();
-    this.log(`Enregistré: ${cmd.cmd}`, 'info');
+    this.log(`Enregistré: ${cmd.cmd} ${cmd.target ? '→ ' + cmd.target.substring(0, 30) : ''}`, 'info');
 
     // Scroll to bottom
-    const table = this.elements.commandsBody.closest('.commands-container');
-    if (table) table.scrollTop = table.scrollHeight;
+    const container = this.elements.commandsBody.closest('.commands-container');
+    if (container) {
+      setTimeout(() => {
+        container.scrollTop = container.scrollHeight;
+      }, 100);
+    }
   },
 
   showCommandEditor() {
@@ -506,13 +542,18 @@ const ui = {
     }
 
     try {
-      await chrome.runtime.sendMessage({
+      const response = await chrome.runtime.sendMessage({
         type: 'HIGHLIGHT_ELEMENT',
         data: { locator }
       });
-      this.log('Élément trouvé et surligné', 'success');
+      
+      if (response.success) {
+        this.log('Élément trouvé et surligné', 'success');
+      } else {
+        this.log(`Élément non trouvé: ${response.error}`, 'error');
+      }
     } catch (error) {
-      this.log(`Élément non trouvé: ${error.message}`, 'error');
+      this.log(`Erreur: ${error.message}`, 'error');
     }
   },
 
@@ -528,12 +569,15 @@ const ui = {
 
   async startRecording() {
     if (!appState.currentMacro) {
-      this.log('Créez ou sélectionnez une macro avant d\'enregistrer', 'warning');
+      this.log('Créez ou sélectionnez une macro avant d\'enregistrer!', 'error');
       return;
     }
 
     try {
+      this.log('Démarrage de l\'enregistrement...', 'info');
+      
       const response = await chrome.runtime.sendMessage({ type: 'START_RECORDING' });
+      console.log('Start recording response:', response);
       
       if (response.error) {
         this.log(`Erreur: ${response.error}`, 'error');
@@ -545,8 +589,14 @@ const ui = {
       this.elements.btnRecord.innerHTML = '<span class="icon">⏹</span> Arrêter';
       this.elements.btnPlay.disabled = true;
       
-      this.log('Enregistrement démarré...', 'info');
+      // Ajouter la commande open automatiquement
+      if (response.openCommand) {
+        this.addRecordedCommand(response.openCommand);
+      }
+      
+      this.log('🔴 Enregistrement en cours... Effectuez vos actions sur la page web.', 'success');
     } catch (error) {
+      console.error('Error starting recording:', error);
       this.log(`Erreur: ${error.message}`, 'error');
     }
   },
@@ -560,7 +610,7 @@ const ui = {
       this.elements.btnRecord.innerHTML = '<span class="icon">⏺</span> Enregistrer';
       this.elements.btnPlay.disabled = false;
       
-      this.log('Enregistrement arrêté', 'success');
+      this.log('⏹ Enregistrement arrêté', 'success');
     } catch (error) {
       this.log(`Erreur: ${error.message}`, 'error');
     }
@@ -579,7 +629,7 @@ const ui = {
     appState.variables = {};
 
     this.updatePlayButtons(true);
-    this.log('Exécution démarrée...', 'info');
+    this.log('▶ Exécution démarrée...', 'info');
 
     await chrome.runtime.sendMessage({ type: 'START_PLAYING' });
     
@@ -591,7 +641,7 @@ const ui = {
     
     if (appState.playingIndex >= appState.currentMacro.commands.length) {
       this.stopPlaying();
-      this.log('Exécution terminée avec succès!', 'success');
+      this.log('✅ Exécution terminée avec succès!', 'success');
       return;
     }
 
@@ -599,21 +649,26 @@ const ui = {
     this.renderCommands();
     
     try {
-      this.log(`Exécution: ${command.cmd} ${command.target || ''}`, 'info');
+      this.log(`Exécution: ${command.cmd} ${command.target ? '→ ' + command.target.substring(0, 40) : ''}`, 'info');
       
-      // Get active tab
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      // Get active tab (not the dashboard)
+      const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      let tab = tabs.find(t => !t.url.startsWith('chrome://') && !t.url.startsWith('chrome-extension://'));
       
-      if (!tab || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
-        throw new Error('Page non valide pour l\'exécution');
+      if (!tab) {
+        const allTabs = await chrome.tabs.query({ currentWindow: true });
+        tab = allTabs.find(t => !t.url.startsWith('chrome://') && !t.url.startsWith('chrome-extension://'));
+      }
+
+      if (!tab) {
+        throw new Error('Aucune page web ouverte');
       }
 
       // Handle special commands
       if (command.cmd === 'open') {
-        await chrome.tabs.update(tab.id, { url: command.target });
-        // Wait for page load
+        await chrome.tabs.update(tab.id, { url: this.replaceVariables(command.target) });
         await this.waitForPageLoad(tab.id);
-        await this.delay(500);
+        await this.delay(1000);
       } else if (command.cmd === 'pause') {
         const ms = parseInt(command.target, 10) || parseInt(command.value, 10) || 1000;
         await this.delay(ms);
@@ -622,14 +677,13 @@ const ui = {
       } else if (command.cmd === 'store') {
         appState.variables[command.value] = command.target;
       } else if (['if', 'else', 'elseIf', 'endIf', 'while', 'endWhile', 'times', 'endTimes', 'gotoLabel', 'label'].includes(command.cmd)) {
-        // Flow control - simplified handling
-        this.log(`Contrôle de flux: ${command.cmd} (basique)`, 'warning');
+        this.log(`Contrôle de flux: ${command.cmd} (non implémenté)`, 'warning');
       } else {
         // Send command to content script
         const processedCommand = {
-          ...command,
-          target: this.replaceVariables(command.target),
-          value: this.replaceVariables(command.value)
+          cmd: command.cmd,
+          target: this.replaceVariables(command.target || ''),
+          value: this.replaceVariables(command.value || '')
         };
 
         const response = await chrome.tabs.sendMessage(tab.id, {
@@ -641,42 +695,36 @@ const ui = {
           throw new Error(response.error);
         }
 
-        // Store variables if any
         if (response.vars) {
           Object.assign(appState.variables, response.vars);
         }
 
-        // Handle verify commands (non-fatal)
         if (command.cmd.startsWith('verify') && !response.success) {
-          this.log(`Vérification échouée: ${response.error}`, 'warning');
+          this.log(`⚠️ Vérification échouée: ${response.error}`, 'warning');
         }
       }
 
-      // Mark as success
       this.markCommandResult(appState.playingIndex, 'success');
       
       appState.playingIndex++;
       
-      // Delay between commands
       if (appState.playSpeed > 0) {
         await this.delay(appState.playSpeed);
       }
       
-      // Continue if not paused
       if (appState.status === 'PLAYING') {
         this.playNextCommand();
       }
       
     } catch (error) {
-      this.log(`Erreur: ${error.message}`, 'error');
+      this.log(`❌ Erreur: ${error.message}`, 'error');
       this.markCommandResult(appState.playingIndex, 'error');
       
       if (command.cmd.startsWith('assert')) {
-        // Assertions are fatal
         this.stopPlaying();
       } else {
-        // Continue on other errors
         appState.playingIndex++;
+        await this.delay(500);
         if (appState.status === 'PLAYING') {
           this.playNextCommand();
         }
@@ -689,12 +737,12 @@ const ui = {
       appState.status = 'PAUSED';
       this.elements.btnPause.innerHTML = '<span class="icon">▶</span> Reprendre';
       this.elements.btnStep.disabled = false;
-      this.log('Exécution en pause', 'warning');
+      this.log('⏸ Exécution en pause', 'warning');
     } else if (appState.status === 'PAUSED') {
       appState.status = 'PLAYING';
       this.elements.btnPause.innerHTML = '<span class="icon">⏸</span> Pause';
       this.elements.btnStep.disabled = true;
-      this.log('Exécution reprise', 'info');
+      this.log('▶ Exécution reprise', 'info');
       this.playNextCommand();
     }
   },
@@ -717,7 +765,7 @@ const ui = {
     
     this.updatePlayButtons(false);
     this.renderCommands();
-    this.log('Exécution arrêtée', 'info');
+    this.log('⏹ Exécution arrêtée', 'info');
   },
 
   updatePlayButtons(isPlaying) {
@@ -749,13 +797,16 @@ const ui = {
   async waitForPageLoad(tabId, timeout = 30000) {
     const startTime = Date.now();
     while (Date.now() - startTime < timeout) {
-      const tab = await chrome.tabs.get(tabId);
-      if (tab.status === 'complete') {
-        return;
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        if (tab.status === 'complete') {
+          return;
+        }
+      } catch (e) {
+        break;
       }
-      await this.delay(100);
+      await this.delay(200);
     }
-    throw new Error('Timeout waiting for page load');
   },
 
   delay(ms) {
@@ -772,26 +823,25 @@ const ui = {
     
     this.elements.logContent.appendChild(entry);
     this.elements.logContent.scrollTop = this.elements.logContent.scrollHeight;
+    
+    console.log(`[${type}] ${message}`);
   },
 
   clearLog() {
     this.elements.logContent.innerHTML = '';
   },
 
-  // ==================== UTILITIES ====================
-
   escapeHtml(str) {
     if (!str) return '';
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
   }
 };
 
 // ==================== INITIALISATION ====================
 
 document.addEventListener('DOMContentLoaded', () => {
+  console.log('DOM loaded, initializing UI...');
   ui.init();
 });
