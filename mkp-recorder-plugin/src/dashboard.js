@@ -374,6 +374,12 @@ const ui = {
     this.log(`Macro "${macro.name}" exportée`, 'success');
   },
 
+  exportMacroUIVision(index) {
+    const macro = appState.macros[index];
+    storage.exportMacro(macro, true);
+    this.log(`Macro "${macro.name}" exportée au format UI.Vision`, 'success');
+  },
+
   exportAllMacros() {
     if (appState.macros.length === 0) {
       this.log('Aucune macro à exporter', 'warning');
