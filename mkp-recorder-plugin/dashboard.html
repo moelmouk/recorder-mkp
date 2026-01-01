@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MKP Recorder - Dashboard</title>
+  <link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1 class="logo">MKP Recorder</h1>
+      </div>
+      <div class="macro-list-container">
+        <div class="macro-list-header">
+          <h3>Macros</h3>
+          <button id="btn-new-macro" class="btn btn-sm btn-primary">+ Nouveau</button>
+        </div>
+        <ul id="macro-list" class="macro-list"></ul>
+      </div>
+      <div class="sidebar-footer">
+        <button id="btn-import" class="btn btn-sm btn-secondary">Importer</button>
+        <button id="btn-export-all" class="btn btn-sm btn-secondary">Exporter tout</button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Toolbar -->
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <span id="current-macro-name" class="current-macro-name">Sélectionnez une macro</span>
+        </div>
+        <div class="toolbar-center">
+          <button id="btn-record" class="btn btn-record" title="Enregistrer">
+            <span class="icon">⏺</span> Enregistrer
+          </button>
+          <button id="btn-play" class="btn btn-play" title="Exécuter">
+            <span class="icon">▶</span> Exécuter
+          </button>
+          <button id="btn-pause" class="btn btn-pause" title="Pause" disabled>
+            <span class="icon">⏸</span> Pause
+          </button>
+          <button id="btn-stop" class="btn btn-stop" title="Stop" disabled>
+            <span class="icon">⏹</span> Stop
+          </button>
+          <button id="btn-step" class="btn btn-step" title="Pas à pas" disabled>
+            <span class="icon">⏭</span> Pas à pas
+          </button>
+        </div>
+        <div class="toolbar-right">
+          <label>Vitesse: </label>
+          <select id="play-speed">
+            <option value="0">Rapide</option>
+            <option value="300">Moyen</option>
+            <option value="1000" selected>Lent</option>
+            <option value="2000">Très lent</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Commands Table -->
+      <div class="commands-container">
+        <table class="commands-table">
+          <thead>
+            <tr>
+              <th class="col-num">#</th>
+              <th class="col-command">Commande</th>
+              <th class="col-target">Cible</th>
+              <th class="col-value">Valeur</th>
+              <th class="col-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="commands-body"></tbody>
+        </table>
+        <div class="commands-footer">
+          <button id="btn-add-command" class="btn btn-sm btn-secondary">+ Ajouter commande</button>
+        </div>
+      </div>
+
+      <!-- Command Editor -->
+      <div class="command-editor" id="command-editor">
+        <h4>Éditer la commande</h4>
+        <div class="form-group">
+          <label>Commande:</label>
+          <select id="edit-command">
+            <optgroup label="Actions">
+              <option value="open">open</option>
+              <option value="click">click</option>
+              <option value="clickAt">clickAt</option>
+              <option value="type">type</option>
+              <option value="sendKeys">sendKeys</option>
+              <option value="select">select</option>
+              <option value="check">check</option>
+              <option value="uncheck">uncheck</option>
+              <option value="mouseOver">mouseOver</option>
+              <option value="dragAndDropToObject">dragAndDropToObject</option>
+              <option value="editContent">editContent</option>
+            </optgroup>
+            <optgroup label="Attentes">
+              <option value="waitForElementPresent">waitForElementPresent</option>
+              <option value="waitForElementVisible">waitForElementVisible</option>
+              <option value="waitForElementNotPresent">waitForElementNotPresent</option>
+              <option value="waitForElementNotVisible">waitForElementNotVisible</option>
+              <option value="pause">pause</option>
+            </optgroup>
+            <optgroup label="Vérifications">
+              <option value="verifyText">verifyText</option>
+              <option value="verifyTitle">verifyTitle</option>
+              <option value="verifyValue">verifyValue</option>
+              <option value="verifyElementPresent">verifyElementPresent</option>
+              <option value="verifyChecked">verifyChecked</option>
+              <option value="verifyNotChecked">verifyNotChecked</option>
+            </optgroup>
+            <optgroup label="Assertions">
+              <option value="assertText">assertText</option>
+              <option value="assertTitle">assertTitle</option>
+              <option value="assertValue">assertValue</option>
+              <option value="assertElementPresent">assertElementPresent</option>
+              <option value="assertChecked">assertChecked</option>
+              <option value="assertNotChecked">assertNotChecked</option>
+            </optgroup>
+            <optgroup label="Stockage">
+              <option value="storeText">storeText</option>
+              <option value="storeValue">storeValue</option>
+              <option value="storeTitle">storeTitle</option>
+              <option value="storeAttribute">storeAttribute</option>
+              <option value="store">store</option>
+              <option value="echo">echo</option>
+            </optgroup>
+            <optgroup label="Fenêtres">
+              <option value="selectWindow">selectWindow</option>
+              <option value="selectFrame">selectFrame</option>
+            </optgroup>
+            <optgroup label="Contrôle">
+              <option value="if">if</option>
+              <option value="else">else</option>
+              <option value="elseIf">elseIf</option>
+              <option value="endIf">endIf</option>
+              <option value="while">while</option>
+              <option value="endWhile">endWhile</option>
+              <option value="times">times</option>
+              <option value="endTimes">endTimes</option>
+              <option value="gotoLabel">gotoLabel</option>
+              <option value="label">label</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Cible:</label>
+          <input type="text" id="edit-target" placeholder="Locator (xpath, css, id...)">
+          <button id="btn-find" class="btn btn-sm btn-secondary" title="Trouver l'élément">🔍</button>
+        </div>
+        <div class="form-group">
+          <label>Valeur:</label>
+          <input type="text" id="edit-value" placeholder="Valeur">
+        </div>
+        <div class="form-actions">
+          <button id="btn-save-command" class="btn btn-primary">Sauvegarder</button>
+          <button id="btn-cancel-edit" class="btn btn-secondary">Annuler</button>
+        </div>
+      </div>
+
+      <!-- Log Panel -->
+      <div class="log-panel">
+        <div class="log-header">
+          <h4>Journal</h4>
+          <button id="btn-clear-log" class="btn btn-sm btn-secondary">Effacer</button>
+        </div>
+        <div id="log-content" class="log-content"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal for new macro -->
+  <div id="modal-new-macro" class="modal">
+    <div class="modal-content">
+      <h3>Nouvelle Macro</h3>
+      <div class="form-group">
+        <label>Nom:</label>
+        <input type="text" id="new-macro-name" placeholder="Nom de la macro">
+      </div>
+      <div class="modal-actions">
+        <button id="btn-create-macro" class="btn btn-primary">Créer</button>
+        <button id="btn-cancel-new-macro" class="btn btn-secondary">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import file input -->
+  <input type="file" id="import-file" accept=".json" style="display: none;">
+
+  <script src="src/dashboard.js" type="module"></script>
+</body>
+</html>
