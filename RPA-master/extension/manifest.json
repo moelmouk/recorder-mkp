@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
 
-  "name": "__MSG_name__",
+  "name": "MKP RECORDER",
   "description": "__MSG_description__",
   "short_name": "__MSG_short_name__",
   "default_locale": "en",
-  "version": "9.5.3",
+  "version": "1",
 
   "icons": {
     "128": "logo128.png"
@@ -76,7 +76,7 @@
   "host_permissions": [
     "\u003Call_urls>"
   ],
-  
+
   "content_security_policy": {
      "extension_pages": "script-src 'self' 'wasm-unsafe-eval';"
   }

@@ -1,6 +1,6 @@
 {
   "name": {
-    "message": "Ui.Vision",
+    "message": "MKP RECORDER",
     "description": "extension name"
   },
   "description": {
@@ -8,7 +8,7 @@
     "description": "extension description"
   },
   "short_name": {
-    "message": "Ui.Vision",
-    "description": "extension short_name"
+    "message": "MKP RECORDER",
+    "description": "extension MKP RECORDER"
   }
 }
