@@ -443,6 +443,29 @@
   // ==================== EXÉCUTION DES COMMANDES ====================
 
   const commandRunner = {
+    // Timeout par défaut pour attendre les éléments (ms)
+    defaultWaitTimeout: 10000,
+
+    // Attendre et trouver un élément avec retry automatique
+    async waitAndFindElement(locator, timeout = 10000) {
+      const startTime = Date.now();
+      let lastError = null;
+      
+      while (Date.now() - startTime < timeout) {
+        try {
+          const el = domUtils.getElementByLocator(locator);
+          if (el && domUtils.isVisible(el)) {
+            return el;
+          }
+        } catch (e) {
+          lastError = e;
+        }
+        await this.delay(200);
+      }
+      
+      throw lastError || new Error('Element not found: ' + locator);
+    },
+
     async run(command) {
       const { cmd, target, value } = command;
       console.log('MKP Running:', cmd, target, value);
@@ -455,14 +478,18 @@
 
           case 'click':
           case 'clickAndWait': {
-            const el = domUtils.getElementByLocator(target);
+            // Attendre que l'élément soit disponible
+            const el = await this.waitAndFindElement(target, this.defaultWaitTimeout);
             this.highlightElement(el);
+            // Scroll vers l'élément
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            await this.delay(100);
             el.click();
             return { success: true };
           }
 
           case 'type': {
-            const el = domUtils.getElementByLocator(target);
+            const el = await this.waitAndFindElement(target, this.defaultWaitTimeout);
             this.highlightElement(el);
             el.focus();
             el.value = value || '';
@@ -472,7 +499,7 @@
           }
 
           case 'select': {
-            const el = domUtils.getElementByLocator(target);
+            const el = await this.waitAndFindElement(target, this.defaultWaitTimeout);
             this.highlightElement(el);
             
             const parts = (value || '').split('=');
@@ -500,7 +527,7 @@
 
           case 'check':
           case 'uncheck': {
-            const el = domUtils.getElementByLocator(target);
+            const el = await this.waitAndFindElement(target, this.defaultWaitTimeout);
             this.highlightElement(el);
             el.checked = cmd === 'check';
             el.dispatchEvent(new Event('change', { bubbles: true }));
