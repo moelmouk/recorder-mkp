@@ -55,15 +55,15 @@
       return siblings.length > 1 ? `${tag}[${index}]` : tag;
     },
 
-    // Vérifier si un ID est valide (pas de code JavaScript)
+    // Vérifier si un ID est valide (version relâchée - comme UI Vision)
     isValidId(id) {
       if (!id || typeof id !== 'string' || id.length === 0) return false;
       // Rejeter les IDs qui commencent par un chiffre
       if (/^\d/.test(id)) return false;
-      // Rejeter les IDs contenant du code JavaScript
-      if (/function|{|}|\(.*\).*{|=>|throw|new |if\s*\(|return\s/.test(id)) return false;
+      // Seulement rejeter les IDs avec du JavaScript ÉVIDENT
+      if (/^function\s|\sfunction\s|^\(.*\).*=>|throw\s+new\s+|if\s*\(.*\)\s*{|return\s+[a-z]/i.test(id)) return false;
       // Rejeter les IDs trop longs (probablement du code)
-      if (id.length > 200) return false;
+      if (id.length > 250) return false;
       return true;
     },
 
