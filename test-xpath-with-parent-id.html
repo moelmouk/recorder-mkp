@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test XPath avec ID Parent - MKP Recorder</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            background: #f9f9f9;
+        }
+        h2 {
+            color: #333;
+            margin-top: 0;
+        }
+        .result {
+            background: #fff;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 11px;
+            border: 1px solid #ccc;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .test-element {
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #blue;
+            background: #e3f2fd;
+            cursor: pointer;
+        }
+        .test-element:hover {
+            background: #bbdefb;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .expected {
+            background: #e8f5e9;
+            padding: 10px;
+            margin: 5px 0;
+            border-left: 4px solid #4CAF50;
+        }
+        .actual {
+            background: #fff3e0;
+            padding: 10px;
+            margin: 5px 0;
+            border-left: 4px solid #ff9800;
+        }
+        .match {
+            color: green;
+            font-weight: bold;
+        }
+        .nomatch {
+            color: red;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test XPath avec ID Parent (Style UI Vision)</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: ng-select avec ID parent</h2>
+        <p>Simule un élément Angular ng-select</p>
+        
+        <div id="market-place_borrower_client-needs_project-nature_project-nature_project-type_input-select_0_projectObject">
+            <ng-select>
+                <div class="ng-select-container">
+                    <div>
+                        <div class="ng-input" data-test-target>
+                            <input type="text" placeholder="Sélectionner...">
+                        </div>
+                    </div>
+                </div>
+            </ng-select>
+        </div>
+        
+        <div class="expected">
+            <strong>Attendu (UI Vision):</strong><br>
+            <code>xpath=//*[@id="market-place_borrower_client-needs_project-nature_project-nature_project-type_input-select_0_projectObject"]/ng-select/div/div/div</code>
+        </div>
+        <div class="actual" id="result1"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 2: Input avec ID valide</h2>
+        
+        <input type="text" 
+               id="market-place_borrower_client-needs_insureds_insureds-container_insured_0_insured-person_first-name_input-text_input" 
+               data-test-target
+               placeholder="Prénom">
+        
+        <div class="expected">
+            <strong>Attendu (UI Vision):</strong><br>
+            <code>id=market-place_borrower_client-needs_insureds_insureds-container_insured_0_insured-person_first-name_input-text_input</code>
+        </div>
+        <div class="actual" id="result2"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 3: Checkbox dans un div avec ID</h2>
+        
+        <div id="market-place_borrower_client-needs_insureds_insureds-container_insured_0_insured-person_is-smoking_no_input-checkbox">
+            <div class="checkbox-wrapper">
+                <label>
+                    <input type="checkbox" data-test-target>
+                    <span>Non fumeur</span>
+                </label>
+            </div>
+        </div>
+        
+        <div class="expected">
+            <strong>Attendu (UI Vision):</strong><br>
+            <code>xpath=//*[@id="market-place_borrower_client-needs_insureds_insureds-container_insured_0_insured-person_is-smoking_no_input-checkbox"]/div/label/input</code>
+        </div>
+        <div class="actual" id="result3"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 4: Élément profond avec ID ancêtre</h2>
+        
+        <div id="container-with-id">
+            <div class="level-1">
+                <div class="level-2">
+                    <div class="level-3">
+                        <span data-test-target>Élément profond</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="expected">
+            <strong>Attendu:</strong><br>
+            <code>xpath=//*[@id="container-with-id"]/div/div/div/span</code>
+        </div>
+        <div class="actual" id="result4"></div>
+    </div>
+
+    <button onclick="runAllTests()">Lancer tous les tests</button>
+    <button onclick="clearResults()">Effacer les résultats</button>
+
+    <script src="content_script.js"></script>
+    <script>
+        // Utiliser les fonctions du content_script
+        
+        function testElement(selector, resultId, expectedXpath) {
+            const element = document.querySelector(selector);
+            if (!element) {
+                document.getElementById(resultId).innerHTML = '<span class="nomatch">❌ Élément non trouvé</span>';
+                return;
+            }
+            
+            const locator = domUtils.getLocator(element);
+            
+            let html = '<strong>Résultat capturé:</strong><br>';
+            html += '<code>' + locator.target + '</code><br><br>';
+            
+            html += '<strong>Alternatives (Targets):</strong><ul>';
+            locator.targetOptions.forEach((opt, idx) => {
+                const isSelected = opt === locator.target;
+                html += '<li style="' + (isSelected ? 'font-weight:bold;background:#ffffcc;' : '') + '">';
+                html += (isSelected ? '✅ ' : '') + opt;
+                html += '</li>';
+            });
+            html += '</ul>';
+            
+            // Vérifier si le XPath correspond à l'attendu
+            const hasExpected = locator.targetOptions.some(opt => opt === expectedXpath);
+            const match = locator.target === expectedXpath || hasExpected;
+            
+            html += '<br><strong>Résultat:</strong> ';
+            if (match) {
+                html += '<span class="match">✅ MATCH!</span>';
+            } else {
+                html += '<span class="nomatch">❌ PAS DE MATCH</span>';
+                html += '<br>Attendu: <code>' + expectedXpath + '</code>';
+            }
+            
+            document.getElementById(resultId).innerHTML = html;
+        }
+
+        function runAllTests() {
+            console.log('=== Lancement des tests ===');
+            
+            // Test 1
+            testElement(
+                '[data-test-target]:nth-of-type(1)', 
+                'result1',
+                'xpath=//*[@id="market-place_borrower_client-needs_project-nature_project-nature_project-type_input-select_0_projectObject"]/ng-select/div/div/div'
+            );
+            
+            // Test 2
+            testElement(
+                'input[placeholder="Prénom"]',
+                'result2',
+                'id=market-place_borrower_client-needs_insureds_insureds-container_insured_0_insured-person_first-name_input-text_input'
+            );
+            
+            // Test 3
+            testElement(
+                'input[type="checkbox"]',
+                'result3',
+                'xpath=//*[@id="market-place_borrower_client-needs_insureds_insureds-container_insured_0_insured-person_is-smoking_no_input-checkbox"]/div/label/input'
+            );
+            
+            // Test 4
+            testElement(
+                '#container-with-id span',
+                'result4',
+                'xpath=//*[@id="container-with-id"]/div/div/div/span'
+            );
+            
+            console.log('=== Tests terminés ===');
+        }
+
+        function clearResults() {
+            ['result1', 'result2', 'result3', 'result4'].forEach(id => {
+                document.getElementById(id).innerHTML = '<em>Résultats effacés</em>';
+            });
+        }
+
+        // Charger le content_script
+        const script = document.createElement('script');
+        script.textContent = `
+            ${domUtils.toString()}
+        `;
+        
+        // Auto-run tests on load
+        window.onload = () => {
+            setTimeout(runAllTests, 500);
+        };
+    </script>
+</body>
+</html>
