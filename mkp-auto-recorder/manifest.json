@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "MKP Auto Recorder",
+  "version": "1.0.0",
+  "description": "Enregistreur automatique compatible UI Vision",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "action": {
+    "default_popup": "src/popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content_script.js"],
+      "run_at": "document_end",
+      "all_frames": false
+    }
+  ]
+}
