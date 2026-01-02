@@ -315,10 +315,18 @@
         candidates.push(`name=${name}`);
       }
 
-      // XPath standard
+      // XPath avec ID du parent (prioritaire - comme UI Vision)
       try {
         const xp = this.xpath($dom);
         if (xp) candidates.push('xpath=' + xp);
+      } catch (e) {}
+
+      // XPath court relatif (comme //ng-select/div/div)
+      try {
+        const xpShort = this.xpathShort($dom);
+        if (xpShort && xpShort !== ('xpath=' + this.xpath($dom))) {
+          candidates.push('xpath=' + xpShort);
+        }
       } catch (e) {}
 
       // XPath par attributs
