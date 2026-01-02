@@ -25,6 +25,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true });
   } else if (message.type === 'GET_SCENARIO') {
     sendResponse({ scenario: currentScenario });
+  } else if (message.type === 'SET_SCENARIO') {
+    currentScenario = message.scenario;
+    sendResponse({ success: true });
   } else if (message.type === 'CLEAR_SCENARIO') {
     currentScenario = {
       Name: 'Nouveau scénario',
