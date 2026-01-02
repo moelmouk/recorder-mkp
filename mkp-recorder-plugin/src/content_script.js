@@ -225,22 +225,32 @@
         candidates.push(`name=${name}`);
       }
 
-      // XPath avec ID (si disponible et valide)
+      // XPath avec ID direct (si disponible et valide)
       if (id) {
         candidates.push(`xpath=//*[@id="${id}"]`);
         candidates.push(`xpath=//${tag}[@id='${id}']`);
       }
 
+      // XPath depuis ancêtre avec ID (style UI.Vision)
+      try {
+        const xpAncestor = this.xpathFromAncestor($dom);
+        if (xpAncestor && !candidates.includes('xpath=' + xpAncestor)) {
+          candidates.push('xpath=' + xpAncestor);
+        }
+      } catch (e) {}
+
       // XPath complet
       try {
         const xp = this.xpath($dom);
-        if (xp) candidates.push('xpath=' + xp);
+        if (xp && !candidates.includes('xpath=' + xp)) {
+          candidates.push('xpath=' + xp);
+        }
       } catch (e) {}
 
       // XPath court
       try {
         const xpShort = this.xpathShort($dom);
-        if (xpShort && !candidates.includes('xpath=' + xpShort)) {
+        if (xpShort && !candidates.some(c => c === 'xpath=' + xpShort)) {
           candidates.push('xpath=' + xpShort);
         }
       } catch (e) {}
