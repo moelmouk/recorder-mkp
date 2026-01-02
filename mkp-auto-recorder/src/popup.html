@@ -172,21 +172,25 @@
   </div>
 
   <div class="controls">
-    <button class="btn-start" id="btnStart">▶️ Démarrer</button>
+    <button class="btn-start" id="btnStart">▶️ Enregistrer</button>
     <button class="btn-stop" id="btnStop" disabled>⏹️ Arrêter</button>
   </div>
 
   <div class="commands" id="commands">
     <div class="empty-state">
       Aucune commande enregistrée.<br>
-      Cliquez sur <strong>Démarrer</strong> pour commencer.
+      Cliquez sur <strong>Enregistrer</strong> pour commencer.
     </div>
   </div>
 
   <div class="export-actions">
-    <button class="btn-secondary" id="btnExport">💾 Exporter JSON</button>
+    <button class="btn-secondary" id="btnPlay" disabled>▶️ Rejouer</button>
+    <button class="btn-secondary" id="btnExport">💾 Exporter</button>
+    <button class="btn-secondary" id="btnImport">📥 Importer</button>
     <button class="btn-secondary" id="btnClear">🗑️ Effacer</button>
   </div>
+
+  <input type="file" id="fileImport" accept=".json" style="display:none;" />
 
   <script src="popup.js"></script>
 </body>
