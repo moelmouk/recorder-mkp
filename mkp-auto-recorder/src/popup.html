@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MKP Auto Recorder</title>
+  <style>
+    body {
+      width: 400px;
+      min-height: 500px;
+      margin: 0;
+      padding: 15px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+    }
+
+    h1 {
+      margin: 0 0 20px 0;
+      font-size: 20px;
+      color: #333;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    button {
+      flex: 1;
+      padding: 10px 15px;
+      border: none;
+      border-radius: 5px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-start {
+      background: #4CAF50;
+      color: white;
+    }
+
+    .btn-start:hover {
+      background: #45a049;
+    }
+
+    .btn-start:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .btn-stop {
+      background: #f44336;
+      color: white;
+    }
+
+    .btn-stop:hover {
+      background: #da190b;
+    }
+
+    .btn-stop:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: #2196F3;
+      color: white;
+    }
+
+    .btn-secondary:hover {
+      background: #0b7dda;
+    }
+
+    .status {
+      padding: 10px;
+      margin-bottom: 20px;
+      border-radius: 5px;
+      text-align: center;
+      font-weight: 500;
+    }
+
+    .status.recording {
+      background: #ffebee;
+      color: #c62828;
+    }
+
+    .status.stopped {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+
+    .scenario-info {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+    }
+
+    .scenario-info label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+      color: #555;
+    }
+
+    .scenario-info input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+
+    .commands {
+      max-height: 250px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      background: white;
+    }
+
+    .command-item {
+      padding: 10px;
+      border-bottom: 1px solid #eee;
+      font-size: 12px;
+    }
+
+    .command-item:last-child {
+      border-bottom: none;
+    }
+
+    .command-item .cmd {
+      font-weight: 600;
+      color: #1976D2;
+      margin-bottom: 3px;
+    }
+
+    .command-item .target {
+      color: #555;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .empty-state {
+      padding: 40px 20px;
+      text-align: center;
+      color: #999;
+    }
+
+    .export-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+  </style>
+</head>
+<body>
+  <h1>📹 MKP Auto Recorder</h1>
+
+  <div class="status stopped" id="status">
+    ⏸️ Prêt à enregistrer
+  </div>
+
+  <div class="scenario-info">
+    <label for="scenarioName">Nom du scénario :</label>
+    <input type="text" id="scenarioName" value="Nouveau scénario" />
+  </div>
+
+  <div class="controls">
+    <button class="btn-start" id="btnStart">▶️ Démarrer</button>
+    <button class="btn-stop" id="btnStop" disabled>⏹️ Arrêter</button>
+  </div>
+
+  <div class="commands" id="commands">
+    <div class="empty-state">
+      Aucune commande enregistrée.<br>
+      Cliquez sur <strong>Démarrer</strong> pour commencer.
+    </div>
+  </div>
+
+  <div class="export-actions">
+    <button class="btn-secondary" id="btnExport">💾 Exporter JSON</button>
+    <button class="btn-secondary" id="btnClear">🗑️ Effacer</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
