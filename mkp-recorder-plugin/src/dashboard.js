@@ -391,12 +391,17 @@ const ui = {
       if (index === appState.playingIndex) rowClass = 'playing';
       else if (index === appState.selectedCommandIndex) rowClass = 'selected';
       
+      // Support both formats (UI Vision and old format)
+      const command = cmd.Command || cmd.cmd || '';
+      const target = cmd.Target || cmd.target || '';
+      const value = cmd.Value || cmd.value || '';
+      
       return `
         <tr class="${rowClass}" data-index="${index}">
           <td class="col-num">${index + 1}</td>
-          <td class="col-command">${this.escapeHtml(cmd.cmd)}</td>
-          <td class="col-target target-cell" title="${this.escapeHtml(cmd.target || '')}">${this.escapeHtml(cmd.target || '')}</td>
-          <td class="col-value value-cell" title="${this.escapeHtml(cmd.value || '')}">${this.escapeHtml(cmd.value || '')}</td>
+          <td class="col-command">${this.escapeHtml(command)}</td>
+          <td class="col-target target-cell" title="${this.escapeHtml(target)}">${this.escapeHtml(target)}</td>
+          <td class="col-value value-cell" title="${this.escapeHtml(value)}">${this.escapeHtml(value)}</td>
           <td class="col-actions">
             <div class="action-btns">
               <button class="btn-edit" title="Éditer">✏️</button>
