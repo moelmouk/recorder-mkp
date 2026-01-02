@@ -152,26 +152,53 @@
       return prefix + parts.join('/');
     },
 
-    // XPath pour éléments dans un conteneur avec ID (style UI.Vision)
+    // XPath pour éléments dans un conteneur avec ID stable (style UI.Vision)
     xpathFromAncestor(dom) {
       if (!dom || dom.nodeType !== 1) return '';
       
-      // Chercher un ancêtre avec un ID valide
+      // Chercher un ancêtre avec un ID stable (non dynamique)
       let ancestor = dom.parentNode;
       let path = [this.relativeXPath(dom)];
+      let depth = 0;
+      const maxDepth = 10; // Ne pas remonter trop haut
       
-      while (ancestor && ancestor.nodeType === 1 && ancestor.tagName.toLowerCase() !== 'body') {
-        const ancestorId = this.getValidId(ancestor);
+      while (ancestor && ancestor.nodeType === 1 && ancestor.tagName.toLowerCase() !== 'body' && depth < maxDepth) {
+        const ancestorId = this.getValidId(ancestor); // ID stable uniquement
         if (ancestorId) {
-          // Trouvé un ancêtre avec ID
+          // Trouvé un ancêtre avec ID stable
           return `//*[@id="${ancestorId}"]/${path.join('/')}`;
         }
         path.unshift(this.relativeXPath(ancestor));
         ancestor = ancestor.parentNode;
+        depth++;
       }
       
-      // Pas d'ancêtre avec ID, retourner chemin complet
-      return '/html/body/' + path.join('/');
+      // Pas d'ancêtre avec ID stable, retourner null pour utiliser une autre méthode
+      return null;
+    },
+
+    // XPath complet sans dépendre d'IDs (pour fallback)
+    xpathFull(dom) {
+      if (!dom || dom.nodeType !== 1) return '';
+      
+      const parts = [];
+      let current = dom;
+      
+      while (current && current.nodeType === 1) {
+        if (current.tagName.toLowerCase() === 'body') {
+          parts.unshift('body');
+          parts.unshift('html');
+          break;
+        }
+        if (current.tagName.toLowerCase() === 'html') {
+          parts.unshift('html');
+          break;
+        }
+        parts.unshift(this.relativeXPath(current));
+        current = current.parentNode;
+      }
+      
+      return '/' + parts.join('/');
     },
 
     // XPath court (alternative)
