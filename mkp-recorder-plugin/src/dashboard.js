@@ -518,17 +518,20 @@ const ui = {
 
     console.log('Adding command to macro:', cmd);
 
-    // Stocker avec Targets comme UI Vision
-    appState.currentMacro.commands.push({
-      cmd: cmd.cmd,
-      target: cmd.target || '',
-      value: cmd.value || '',
-      targetOptions: cmd.targetOptions || [] // Garder pour compatibilité interne
-    });
+    // Stocker au format UI Vision
+    const command = {
+      Command: cmd.Command || cmd.cmd || '',
+      Target: cmd.Target || cmd.target || '',
+      Value: cmd.Value || cmd.value || '',
+      Targets: cmd.Targets || cmd.targetOptions || [],
+      Description: cmd.Description || ''
+    };
+
+    appState.currentMacro.commands.push(command);
 
     storage.saveMacros(appState.macros);
     this.renderCommands();
-    this.log(`Enregistré: ${cmd.cmd} ${cmd.target ? '→ ' + cmd.target.substring(0, 30) : ''}`, 'info');
+    this.log(`Enregistré: ${command.Command} ${command.Target ? '→ ' + command.Target.substring(0, 30) : ''}`, 'info');
 
     // Scroll to bottom
     const container = this.elements.commandsBody.closest('.commands-container');
