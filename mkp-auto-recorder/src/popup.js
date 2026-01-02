@@ -9,6 +9,7 @@ const elements = {
   // Tabs
   tabBtns: document.querySelectorAll('.tab-btn'),
   tabPanes: document.querySelectorAll('.tab-pane'),
+  btnSidePanel: document.getElementById('btnSidePanel'),
   
   // Recorder Tab
   statusBar: document.getElementById('statusBar'),
@@ -102,6 +103,27 @@ elements.tabBtns.forEach(btn => {
     if (tabId === 'groups') refreshGroupsList();
   });
 });
+
+if (elements.btnSidePanel) {
+  elements.btnSidePanel.addEventListener('click', async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.id) {
+      showStatus('error', 'Aucun onglet actif');
+      return;
+    }
+
+    if (!chrome.sidePanel || typeof chrome.sidePanel.open !== 'function') {
+      showStatus('error', 'Side panel non supporté sur cette version de Chrome');
+      return;
+    }
+
+    try {
+      await chrome.sidePanel.open({ tabId: tab.id });
+    } catch (e) {
+      showStatus('error', e && e.message ? e.message : 'Impossible d’ouvrir le side panel');
+    }
+  });
+}
 
 // ==================== STORAGE ====================
 
