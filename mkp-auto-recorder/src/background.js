@@ -1,27 +1,31 @@
 /**
- * MKP Auto Recorder - Background Service Worker
- * Based on UI Vision RPA architecture
- * With persistent recording state
+ * MKP Auto Recorder - Background Service Worker v2.0
+ * With real timing capture, group playback, and persistent state
  */
 
 let currentScenario = {
+  id: '',
   Name: 'Nouveau scénario',
   CreationDate: new Date().toISOString().split('T')[0],
+  groupId: '',
   Commands: []
 };
 
 let isRecording = false;
 let recordingTabId = null;
+let lastCommandTime = null;
+
 let isPlaying = false;
 let playbackState = {
   currentIndex: 0,
-  status: 'idle', // idle, playing, paused, completed, error
-  error: null
+  scenarioIndex: 0,
+  status: 'idle',
+  error: null,
+  total: 0
 };
 
 // ========== STATE PERSISTENCE ==========
 
-// Save state to storage
 async function saveState() {
   await chrome.storage.local.set({
     mkpRecorderState: {
@@ -29,30 +33,25 @@ async function saveState() {
       recordingTabId,
       currentScenario,
       isPlaying,
-      playbackState
+      playbackState,
+      lastCommandTime
     }
   });
 }
 
-// Load state from storage
 async function loadState() {
   const result = await chrome.storage.local.get('mkpRecorderState');
   if (result.mkpRecorderState) {
     const state = result.mkpRecorderState;
     isRecording = state.isRecording || false;
     recordingTabId = state.recordingTabId || null;
-    currentScenario = state.currentScenario || {
-      Name: 'Nouveau scénario',
-      CreationDate: new Date().toISOString().split('T')[0],
-      Commands: []
-    };
+    currentScenario = state.currentScenario || createEmptyScenario();
     isPlaying = state.isPlaying || false;
     playbackState = state.playbackState || { currentIndex: 0, status: 'idle', error: null };
+    lastCommandTime = state.lastCommandTime || null;
     
-    // Update badge if recording
     updateBadge();
     
-    // Re-inject content script if recording was active
     if (isRecording && recordingTabId) {
       try {
         await chrome.scripting.executeScript({
@@ -68,20 +67,28 @@ async function loadState() {
   }
 }
 
-// Update extension badge
+function createEmptyScenario() {
+  return {
+    id: Date.now().toString(36) + Math.random().toString(36).substr(2),
+    Name: 'Nouveau scénario',
+    CreationDate: new Date().toISOString().split('T')[0],
+    groupId: '',
+    Commands: []
+  };
+}
+
 function updateBadge() {
   if (isRecording) {
     chrome.action.setBadgeText({ text: 'REC' });
-    chrome.action.setBadgeBackgroundColor({ color: '#f44336' });
+    chrome.action.setBadgeBackgroundColor({ color: '#ef4444' });
   } else if (isPlaying) {
     chrome.action.setBadgeText({ text: '▶' });
-    chrome.action.setBadgeBackgroundColor({ color: '#2196F3' });
+    chrome.action.setBadgeBackgroundColor({ color: '#6366f1' });
   } else {
     chrome.action.setBadgeText({ text: '' });
   }
 }
 
-// Initialize state on service worker start
 loadState();
 
 // ========== MESSAGE LISTENER ==========
@@ -89,49 +96,88 @@ loadState();
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background received:', message.type);
 
-  if (message.type === 'START_RECORDING') {
-    handleStartRecording(message.tabId || (sender.tab ? sender.tab.id : null));
-    sendResponse({ success: true });
-  } else if (message.type === 'STOP_RECORDING') {
-    handleStopRecording(message.tabId || (sender.tab ? sender.tab.id : null));
-    sendResponse({ success: true });
-  } else if (message.type === 'COMMAND_RECORDED') {
-    currentScenario.Commands.push(message.command);
-    saveState();
-    sendResponse({ success: true });
-  } else if (message.type === 'GET_SCENARIO') {
-    sendResponse({ scenario: currentScenario });
-  } else if (message.type === 'SET_SCENARIO') {
-    currentScenario = message.scenario;
-    saveState();
-    sendResponse({ success: true });
-  } else if (message.type === 'CLEAR_SCENARIO') {
-    currentScenario = {
-      Name: 'Nouveau scénario',
-      CreationDate: new Date().toISOString().split('T')[0],
-      Commands: []
-    };
-    saveState();
-    sendResponse({ success: true });
-  } else if (message.type === 'EXPORT_SCENARIO') {
-    sendResponse({ scenario: currentScenario });
-  } else if (message.type === 'PLAY_SCENARIO') {
-    handlePlayScenario(message.tabId);
-    sendResponse({ success: true });
-  } else if (message.type === 'STOP_PLAYBACK') {
-    isPlaying = false;
-    playbackState.status = 'stopped';
-    updateBadge();
-    saveState();
-    sendResponse({ success: true });
-  } else if (message.type === 'GET_PLAYBACK_STATE') {
-    sendResponse({ state: playbackState, isPlaying: isPlaying });
-  } else if (message.type === 'GET_RECORDING_STATE') {
-    sendResponse({ 
-      isRecording: isRecording, 
-      recordingTabId: recordingTabId,
-      commandCount: currentScenario.Commands.length
-    });
+  switch (message.type) {
+    case 'START_RECORDING':
+      handleStartRecording(message.tabId || (sender.tab ? sender.tab.id : null));
+      sendResponse({ success: true });
+      break;
+
+    case 'STOP_RECORDING':
+      handleStopRecording(message.tabId || (sender.tab ? sender.tab.id : null));
+      sendResponse({ success: true });
+      break;
+
+    case 'COMMAND_RECORDED':
+      // Calculate timing since last command
+      const now = Date.now();
+      const timing = lastCommandTime ? now - lastCommandTime : 0;
+      lastCommandTime = now;
+      
+      // Add timing to command
+      const commandWithTiming = {
+        ...message.command,
+        timing: timing,
+        timestamp: now
+      };
+      
+      currentScenario.Commands.push(commandWithTiming);
+      saveState();
+      sendResponse({ success: true });
+      break;
+
+    case 'GET_SCENARIO':
+      sendResponse({ scenario: currentScenario });
+      break;
+
+    case 'SET_SCENARIO':
+      currentScenario = message.scenario;
+      saveState();
+      sendResponse({ success: true });
+      break;
+
+    case 'CLEAR_SCENARIO':
+      currentScenario = createEmptyScenario();
+      lastCommandTime = null;
+      saveState();
+      sendResponse({ success: true });
+      break;
+
+    case 'EXPORT_SCENARIO':
+      sendResponse({ scenario: currentScenario });
+      break;
+
+    case 'PLAY_SCENARIO':
+      handlePlayScenario(message.tabId, message.useRealTiming !== false);
+      sendResponse({ success: true });
+      break;
+
+    case 'PLAY_GROUP':
+      handlePlayGroup(message.scenarios, message.tabId, message.useRealTiming !== false);
+      sendResponse({ success: true });
+      break;
+
+    case 'STOP_PLAYBACK':
+      isPlaying = false;
+      playbackState.status = 'stopped';
+      updateBadge();
+      saveState();
+      sendResponse({ success: true });
+      break;
+
+    case 'GET_PLAYBACK_STATE':
+      sendResponse({ state: playbackState, isPlaying: isPlaying });
+      break;
+
+    case 'GET_RECORDING_STATE':
+      sendResponse({ 
+        isRecording: isRecording, 
+        recordingTabId: recordingTabId,
+        commandCount: currentScenario.Commands.length
+      });
+      break;
+
+    default:
+      sendResponse({ success: false, error: 'Unknown message type' });
   }
 
   return true;
@@ -139,13 +185,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // ========== TAB EVENTS ==========
 
-// Listen for tab updates to re-inject content script when navigating
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (isRecording && tabId === recordingTabId && changeInfo.status === 'complete') {
     console.log('Tab updated while recording, re-injecting content script');
     
     try {
-      // Small delay to ensure page is ready
       await new Promise(r => setTimeout(r, 300));
       
       await chrome.scripting.executeScript({
@@ -161,7 +205,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   }
 });
 
-// Listen for tab close
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (isRecording && tabId === recordingTabId) {
     console.log('Recording tab closed, stopping recording');
@@ -177,15 +220,13 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 async function handleStartRecording(tabId) {
   isRecording = true;
   recordingTabId = tabId;
+  lastCommandTime = Date.now();
   
-  // Clear previous commands
   currentScenario.Commands = [];
   currentScenario.CreationDate = new Date().toISOString().split('T')[0];
 
-  // Update badge
   updateBadge();
 
-  // Inject content script if needed
   try {
     await chrome.scripting.executeScript({
       target: { tabId: tabId },
@@ -195,7 +236,6 @@ async function handleStartRecording(tabId) {
     console.log('Content script already injected or error:', e);
   }
 
-  // Start recording and show indicator
   try {
     await chrome.tabs.sendMessage(tabId, { type: 'START_RECORDING' });
     await chrome.tabs.sendMessage(tabId, { type: 'SHOW_RECORDING_INDICATOR' });
@@ -203,9 +243,7 @@ async function handleStartRecording(tabId) {
     console.log('Error sending start recording message:', e);
   }
   
-  // Save state
   await saveState();
-  
   console.log('Recording started on tab', tabId);
 }
 
@@ -213,8 +251,8 @@ async function handleStopRecording(tabId) {
   isRecording = false;
   const previousTabId = recordingTabId;
   recordingTabId = null;
+  lastCommandTime = null;
 
-  // Update badge
   updateBadge();
 
   try {
@@ -227,15 +265,13 @@ async function handleStopRecording(tabId) {
     console.log('Error stopping recording:', e);
   }
 
-  // Save state
   await saveState();
-
   console.log('Recording stopped');
 }
 
 // ========== PLAYBACK HANDLERS ==========
 
-async function handlePlayScenario(tabId) {
+async function handlePlayScenario(tabId, useRealTiming = true) {
   if (isPlaying) {
     console.log('Already playing');
     return;
@@ -251,6 +287,7 @@ async function handlePlayScenario(tabId) {
   isPlaying = true;
   playbackState = {
     currentIndex: 0,
+    scenarioIndex: 0,
     status: 'playing',
     error: null,
     total: currentScenario.Commands.length
@@ -259,9 +296,83 @@ async function handlePlayScenario(tabId) {
   updateBadge();
   await saveState();
 
-  console.log('Starting playback of', currentScenario.Commands.length, 'commands');
+  await executeScenario(currentScenario, tabId, useRealTiming);
 
-  // Inject content script if needed
+  if (isPlaying) {
+    playbackState.status = 'completed';
+    console.log('Playback completed successfully');
+  }
+  
+  isPlaying = false;
+  updateBadge();
+  await saveState();
+}
+
+async function handlePlayGroup(scenarios, tabId, useRealTiming = true) {
+  if (isPlaying) {
+    console.log('Already playing');
+    return;
+  }
+
+  if (!scenarios || scenarios.length === 0) {
+    playbackState.status = 'error';
+    playbackState.error = 'Aucun scénario à jouer';
+    return;
+  }
+
+  isPlaying = true;
+  playbackState = {
+    currentIndex: 0,
+    scenarioIndex: 0,
+    status: 'playing',
+    error: null,
+    total: 0
+  };
+
+  updateBadge();
+  await saveState();
+
+  console.log(`Starting group playback of ${scenarios.length} scenarios`);
+
+  for (let i = 0; i < scenarios.length; i++) {
+    if (!isPlaying) {
+      console.log('Group playback stopped by user');
+      playbackState.status = 'stopped';
+      break;
+    }
+
+    const scenario = scenarios[i];
+    playbackState.scenarioIndex = i;
+    playbackState.total = scenario.Commands.length;
+    playbackState.currentIndex = 0;
+    await saveState();
+
+    console.log(`Playing scenario ${i + 1}/${scenarios.length}: ${scenario.Name}`);
+
+    const success = await executeScenario(scenario, tabId, useRealTiming);
+    
+    if (!success) {
+      break;
+    }
+
+    // Small delay between scenarios
+    if (i < scenarios.length - 1) {
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+
+  if (isPlaying) {
+    playbackState.status = 'completed';
+    console.log('Group playback completed');
+  }
+
+  isPlaying = false;
+  updateBadge();
+  await saveState();
+}
+
+async function executeScenario(scenario, tabId, useRealTiming) {
+  // Inject content script
   try {
     await chrome.scripting.executeScript({
       target: { tabId: tabId },
@@ -271,32 +382,35 @@ async function handlePlayScenario(tabId) {
     console.log('Content script already injected or error:', e);
   }
 
-  // Execute commands sequentially
-  for (let i = 0; i < currentScenario.Commands.length; i++) {
+  for (let i = 0; i < scenario.Commands.length; i++) {
     if (!isPlaying) {
       console.log('Playback stopped by user');
       playbackState.status = 'stopped';
-      break;
+      return false;
     }
 
-    const cmd = currentScenario.Commands[i];
+    const cmd = scenario.Commands[i];
     playbackState.currentIndex = i;
     await saveState();
-    
-    console.log(`Executing command ${i + 1}/${currentScenario.Commands.length}:`, cmd.Command, cmd.Target);
+
+    console.log(`Executing command ${i + 1}/${scenario.Commands.length}:`, cmd.Command, cmd.Target);
+
+    // Apply real timing delay if enabled
+    if (useRealTiming && cmd.timing && cmd.timing > 0 && i > 0) {
+      const delay = Math.min(cmd.timing, 10000); // Max 10 seconds
+      console.log(`Waiting ${delay}ms (real timing)`);
+      await new Promise(r => setTimeout(r, delay));
+    }
 
     try {
-      // Handle 'open' command - navigate to URL
+      // Handle 'open' command
       if (cmd.Command && cmd.Command.toLowerCase() === 'open') {
         const url = cmd.Target;
         if (url) {
           console.log('Navigating to:', url);
           await chrome.tabs.update(tabId, { url: url });
-          
-          // Wait for page to load
           await waitForPageLoad(tabId);
           
-          // Re-inject content script after navigation
           await new Promise(r => setTimeout(r, 500));
           try {
             await chrome.scripting.executeScript({
@@ -307,6 +421,14 @@ async function handlePlayScenario(tabId) {
             console.log('Content script injection after navigation:', e);
           }
         }
+        continue;
+      }
+
+      // Handle 'pause' command
+      if (cmd.Command && cmd.Command.toLowerCase() === 'pause') {
+        const pauseTime = parseInt(cmd.Target) || parseInt(cmd.Value) || 1000;
+        console.log(`Pausing for ${pauseTime}ms`);
+        await new Promise(r => setTimeout(r, pauseTime));
         continue;
       }
 
@@ -329,24 +451,18 @@ async function handlePlayScenario(tabId) {
       isPlaying = false;
       updateBadge();
       await saveState();
-      break;
+      return false;
     }
 
-    // Wait between commands (like UI Vision)
-    await new Promise(r => setTimeout(r, 300));
+    // Minimum delay between commands
+    if (!useRealTiming || !cmd.timing) {
+      await new Promise(r => setTimeout(r, 200));
+    }
   }
 
-  if (isPlaying) {
-    playbackState.status = 'completed';
-    console.log('Playback completed successfully');
-  }
-  
-  isPlaying = false;
-  updateBadge();
-  await saveState();
+  return true;
 }
 
-// Wait for page to fully load
 function waitForPageLoad(tabId) {
   return new Promise((resolve) => {
     const listener = (updatedTabId, changeInfo) => {
@@ -357,7 +473,6 @@ function waitForPageLoad(tabId) {
     };
     chrome.tabs.onUpdated.addListener(listener);
     
-    // Timeout after 30 seconds
     setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(listener);
       resolve();
@@ -365,4 +480,4 @@ function waitForPageLoad(tabId) {
   });
 }
 
-console.log('MKP Auto Recorder background loaded');
+console.log('MKP Auto Recorder background v2.0 loaded');
