@@ -1,5 +1,6 @@
 /**
  * MKP Auto Recorder - Background Service Worker
+ * Based on UI Vision RPA architecture
  */
 
 let currentScenario = {
@@ -9,16 +10,22 @@ let currentScenario = {
 };
 
 let isRecording = false;
+let isPlaying = false;
+let playbackState = {
+  currentIndex: 0,
+  status: 'idle', // idle, playing, paused, completed, error
+  error: null
+};
 
 // Message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background received:', message.type);
 
   if (message.type === 'START_RECORDING') {
-    handleStartRecording(sender.tab.id);
+    handleStartRecording(sender.tab ? sender.tab.id : null);
     sendResponse({ success: true });
   } else if (message.type === 'STOP_RECORDING') {
-    handleStopRecording(sender.tab.id);
+    handleStopRecording(sender.tab ? sender.tab.id : null);
     sendResponse({ success: true });
   } else if (message.type === 'COMMAND_RECORDED') {
     currentScenario.Commands.push(message.command);
@@ -37,6 +44,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true });
   } else if (message.type === 'EXPORT_SCENARIO') {
     sendResponse({ scenario: currentScenario });
+  } else if (message.type === 'PLAY_SCENARIO') {
+    handlePlayScenario(message.tabId);
+    sendResponse({ success: true });
+  } else if (message.type === 'STOP_PLAYBACK') {
+    isPlaying = false;
+    playbackState.status = 'stopped';
+    sendResponse({ success: true });
+  } else if (message.type === 'GET_PLAYBACK_STATE') {
+    sendResponse({ state: playbackState, isPlaying: isPlaying });
   }
 
   return true;
