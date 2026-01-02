@@ -393,9 +393,110 @@
       sendResponse({ success: true, commands: recordedCommands });
     } else if (message.type === 'GET_COMMANDS') {
       sendResponse({ commands: recordedCommands });
+    } else if (message.type === 'EXECUTE_COMMAND') {
+      executeCommand(message.command).then(result => {
+        sendResponse(result);
+      }).catch(error => {
+        sendResponse({ success: false, error: error.message });
+      });
+      return true; // Keep channel open for async response
     }
     return true;
   });
+
+  // ========== COMMAND EXECUTOR (PLAYER) ==========
+  async function executeCommand(cmd) {
+    console.log('MKP Executing:', cmd.Command, cmd.Target);
+
+    const element = await findElement(cmd.Target, cmd.Targets || []);
+    
+    if (!element) {
+      throw new Error(`Element not found: ${cmd.Target}`);
+    }
+
+    switch (cmd.Command.toLowerCase()) {
+      case 'click':
+        element.click();
+        break;
+
+      case 'type':
+        if (element.tagName.toLowerCase() === 'input' || element.tagName.toLowerCase() === 'textarea') {
+          element.value = cmd.Value;
+          element.dispatchEvent(new Event('input', { bubbles: true }));
+          element.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        break;
+
+      case 'select':
+        if (element.tagName.toLowerCase() === 'select') {
+          const options = Array.from(element.options);
+          const option = options.find(opt => opt.text === cmd.Value);
+          if (option) {
+            element.value = option.value;
+            element.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
+        break;
+
+      case 'check':
+        if (element.type === 'checkbox' || element.type === 'radio') {
+          element.checked = true;
+          element.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        break;
+
+      case 'uncheck':
+        if (element.type === 'checkbox') {
+          element.checked = false;
+          element.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        break;
+
+      default:
+        throw new Error(`Unknown command: ${cmd.Command}`);
+    }
+
+    return { success: true };
+  }
+
+  async function findElement(target, targets) {
+    // Try main target first
+    let element = findElementByLocator(target);
+    if (element) return element;
+
+    // Try alternative targets
+    for (const alt of targets) {
+      element = findElementByLocator(alt);
+      if (element) return element;
+    }
+
+    return null;
+  }
+
+  function findElementByLocator(locator) {
+    try {
+      if (locator.startsWith('id=')) {
+        const id = locator.substring(3);
+        return document.getElementById(id);
+      } else if (locator.startsWith('name=')) {
+        const name = locator.substring(5);
+        return document.querySelector(`[name="${name}"]`);
+      } else if (locator.startsWith('xpath=')) {
+        const xpath = locator.substring(6);
+        return getElementByXPath(xpath);
+      } else if (locator.startsWith('css=')) {
+        const css = locator.substring(4);
+        return document.querySelector(css);
+      } else if (locator.startsWith('linkText=')) {
+        const text = locator.substring(9);
+        const links = Array.from(document.getElementsByTagName('a'));
+        return links.find(a => a.innerText.trim() === text);
+      }
+    } catch (e) {
+      console.error('Error finding element:', e);
+    }
+    return null;
+  }
 
   console.log('MKP Auto Recorder content script loaded');
 })();
