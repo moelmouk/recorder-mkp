@@ -55,6 +55,18 @@
       return siblings.length > 1 ? `${tag}[${index}]` : tag;
     },
 
+    // Vérifier si un ID est valide (pas de code JavaScript)
+    isValidId(id) {
+      if (!id || typeof id !== 'string' || id.length === 0) return false;
+      // Rejeter les IDs qui commencent par un chiffre
+      if (/^\d/.test(id)) return false;
+      // Rejeter les IDs contenant du code JavaScript
+      if (/function|{|}|\(.*\).*{|=>|throw|new |if\s*\(|return\s/.test(id)) return false;
+      // Rejeter les IDs trop longs (probablement du code)
+      if (id.length > 200) return false;
+      return true;
+    },
+
     xpath(dom) {
       if (!dom || dom.nodeType !== 1) return '';
       
@@ -62,8 +74,9 @@
       let current = dom;
       
       while (current && current.nodeType === 1) {
-        if (current.id) {
-          parts.unshift(`*[@id="${current.id}"]`);
+        const currentId = current.getAttribute('id');
+        if (currentId && this.isValidId(currentId)) {
+          parts.unshift(`*[@id="${currentId}"]`);
           break;
         }
         if (current.tagName.toLowerCase() === 'body') {
@@ -83,10 +96,127 @@
       return prefix + parts.join('/');
     },
 
+    // XPath par position (comme UI Vision)
+    xpathPosition(dom) {
+      let path = '';
+      let current = dom;
+
+      try {
+        while (current !== null) {
+          let currentPath;
+
+          if (current.parentNode != null) {
+            currentPath = '/' + this.relativeXPath(current);
+          } else if (current.tagName === 'BODY') {
+            currentPath = 'html/body';
+          } else {
+            currentPath = '/' + current.nodeName.toLowerCase();
+          }
+
+          path = currentPath + path;
+          const locator = '/' + path;
+
+          if (dom === this.getElementByXPath(locator)) {
+            return locator;
+          }
+
+          current = current.parentNode;
+        }
+      } catch (e) {}
+
+      return null;
+    },
+
+    // XPath par attributs (comme UI Vision)
+    xpathAttr(dom) {
+      const PREFERRED_ATTRIBUTES = ['id', 'name', 'value', 'type', 'action', 'onclick'];
+      
+      try {
+        if (!dom.attributes) return null;
+
+        const attsMap = {};
+        for (let i = 0; i < dom.attributes.length; i++) {
+          const att = dom.attributes[i];
+          attsMap[att.name] = att.value;
+        }
+
+        const names = [];
+        for (let i = 0; i < PREFERRED_ATTRIBUTES.length; i++) {
+          const name = PREFERRED_ATTRIBUTES[i];
+
+          if (attsMap[name] != null && this.isValidId(attsMap[name])) {
+            names.push(name);
+
+            const locator = this.attributesXPath(
+              dom.nodeName.toLowerCase(),
+              names,
+              attsMap
+            );
+
+            if (dom === this.getElementByXPath(locator)) {
+              return locator;
+            }
+          }
+        }
+      } catch (e) {}
+
+      return null;
+    },
+
+    attributesXPath(name, attNames, attributes) {
+      let locator = '//' + name + '[';
+      for (let i = 0; i < attNames.length; i++) {
+        if (i > 0) locator += ' and ';
+        const attName = attNames[i];
+        locator += '@' + attName + '=' + this.attributeValue(attributes[attName]);
+      }
+      locator += ']';
+      return locator;
+    },
+
+    attributeValue(value) {
+      if (value.indexOf("'") < 0) {
+        return "'" + value + "'";
+      } else if (value.indexOf('"') < 0) {
+        return '"' + value + '"';
+      } else {
+        let result = 'concat(';
+        let didReachEndOfValue = false;
+        while (!didReachEndOfValue) {
+          const apos = value.indexOf("'");
+          const quot = value.indexOf('"');
+          if (apos < 0) {
+            result += "'" + value + "'";
+            didReachEndOfValue = true;
+            break;
+          } else if (quot < 0) {
+            result += '"' + value + '"';
+            didReachEndOfValue = true;
+            break;
+          } else if (quot < apos) {
+            const part = value.substring(0, apos);
+            result += "'" + part + "'";
+            value = value.substring(part.length);
+          } else {
+            const part = value.substring(0, quot);
+            result += '"' + part + '"';
+            value = value.substring(part.length);
+          }
+          result += ',';
+        }
+        result += ')';
+        return result;
+      }
+    },
+
     cssSelector(dom) {
       if (!dom || dom.nodeType !== 1) return '';
       if (dom.tagName.toLowerCase() === 'body') return 'body';
-      if (dom.id) return '#' + CSS.escape(dom.id);
+      
+      const domId = dom.getAttribute('id');
+      if (domId && this.isValidId(domId)) {
+        return '#' + CSS.escape(domId);
+      }
 
       const tag = dom.tagName.toLowerCase();
       const parent = dom.parentNode;
@@ -103,15 +233,47 @@
       return this.cssSelector(parent) + ' > ' + tag + ':nth-of-type(' + index + ')';
     },
 
+    getFirstWorkingLocator(locators, $el) {
+      for (let i = 0; i < locators.length; i++) {
+        try {
+          const $match = this.getElementByLocator(locators[i]);
+          if ($el === $match) {
+            return locators[i];
+          }
+        } catch (e) {
+          // Continue to next locator
+        }
+      }
+      return null;
+    },
+
     getLocator($dom) {
       if (!$dom || $dom.nodeType !== 1) return { target: '', targetOptions: [] };
       
       const candidates = [];
       const id = $dom.getAttribute('id');
       const name = $dom.getAttribute('name');
+      const isLink = $dom.tagName.toLowerCase() === 'a';
 
-      // ID (préféré)
-      if (id && id.length && !id.match(/^\d/)) {
+      // Link text (pour les liens)
+      if (isLink) {
+        try {
+          const text = this.domText($dom);
+          if (text && text.length) {
+            const links = Array.from(document.getElementsByTagName('a'));
+            const matches = links.filter($el => this.domText($el) === text);
+            const index = matches.findIndex($el => $el === $dom);
+            if (index !== -1) {
+              candidates.push(
+                index === 0 ? `linkText=${text}` : `linkText=${text}@POS=${index + 1}`
+              );
+            }
+          }
+        } catch (e) {}
+      }
+
+      // ID (seulement si valide)
+      if (id && this.isValidId(id)) {
         candidates.push(`id=${id}`);
       }
 
@@ -120,10 +282,22 @@
         candidates.push(`name=${name}`);
       }
 
-      // XPath
+      // XPath standard
       try {
         const xp = this.xpath($dom);
         if (xp) candidates.push('xpath=' + xp);
+      } catch (e) {}
+
+      // XPath par attributs
+      try {
+        const attrXPath = this.xpathAttr($dom);
+        if (attrXPath) candidates.push('xpath=' + attrXPath);
+      } catch (e) {}
+
+      // XPath par position
+      try {
+        const positionXPath = this.xpathPosition($dom);
+        if (positionXPath) candidates.push('xpath=' + positionXPath);
       } catch (e) {}
 
       // CSS
@@ -132,8 +306,11 @@
         if (css) candidates.push('css=' + css);
       } catch (e) {}
 
+      // Obtenir le premier sélecteur qui fonctionne
+      const chosen = this.getFirstWorkingLocator(candidates, $dom);
+
       return {
-        target: candidates[0] || '',
+        target: chosen || candidates[0] || '',
         targetOptions: candidates
       };
     },
