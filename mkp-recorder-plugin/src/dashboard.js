@@ -697,16 +697,19 @@ const ui = {
         await this.delay(ms);
       } else if (command.cmd === 'echo') {
         this.log(`Echo: ${this.replaceVariables(command.target)}`, 'info');
-      } else if (command.cmd === 'store') {
-        appState.variables[command.value] = command.target;
-      } else if (['if', 'else', 'elseIf', 'endIf', 'while', 'endWhile', 'times', 'endTimes', 'gotoLabel', 'label'].includes(command.cmd)) {
-        this.log(`Contrôle de flux: ${command.cmd} (non implémenté)`, 'warning');
+      } else if (command.cmd === 'store' || command.Command === 'store') {
+        const cmdValue = command.value || command.Value || '';
+        const cmdTarget = command.target || command.Target || '';
+        appState.variables[cmdValue] = cmdTarget;
+      } else if (['if', 'else', 'elseIf', 'endIf', 'while', 'endWhile', 'times', 'endTimes', 'gotoLabel', 'label'].includes(command.cmd || command.Command)) {
+        this.log(`Contrôle de flux: ${command.cmd || command.Command} (non implémenté)`, 'warning');
       } else {
-        // Send command to content script
+        // Send command to content script - Support both formats
         const processedCommand = {
-          cmd: command.cmd,
-          target: this.replaceVariables(command.target || ''),
-          value: this.replaceVariables(command.value || '')
+          cmd: command.Command || command.cmd || '',
+          target: this.replaceVariables(command.Target || command.target || ''),
+          value: this.replaceVariables(command.Value || command.value || ''),
+          targets: command.Targets || command.targetOptions || []
         };
 
         const response = await chrome.tabs.sendMessage(tab.id, {
@@ -722,7 +725,8 @@ const ui = {
           Object.assign(appState.variables, response.vars);
         }
 
-        if (command.cmd.startsWith('verify') && !response.success) {
+        const cmdName = command.Command || command.cmd || '';
+        if (cmdName.startsWith('verify') && !response.success) {
           this.log(`⚠️ Vérification échouée: ${response.error}`, 'warning');
         }
       }
