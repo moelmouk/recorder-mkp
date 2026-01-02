@@ -37,7 +37,20 @@ const storage = {
   },
 
   async exportMacro(macro) {
-    const blob = new Blob([JSON.stringify(macro, null, 2)], { type: 'application/json' });
+    // Format compatible UI Vision
+    const uiVisionFormat = {
+      Name: macro.name,
+      CreationDate: new Date(macro.createdAt).toISOString().split('T')[0],
+      Commands: macro.commands.map(cmd => ({
+        Command: cmd.cmd,
+        Target: cmd.target || '',
+        Value: cmd.value || '',
+        Targets: cmd.targetOptions || [],
+        Description: ''
+      }))
+    };
+    
+    const blob = new Blob([JSON.stringify(uiVisionFormat, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
