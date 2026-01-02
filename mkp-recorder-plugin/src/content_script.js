@@ -155,7 +155,9 @@
     cssSelector(dom) {
       if (!dom || dom.nodeType !== 1) return '';
       if (dom.tagName.toLowerCase() === 'body') return 'body';
-      if (dom.id) return '#' + CSS.escape(dom.id);
+      
+      const validId = this.getValidId(dom);
+      if (validId) return '#' + CSS.escape(validId);
 
       const tag = dom.tagName.toLowerCase();
       const parent = dom.parentNode;
@@ -176,8 +178,8 @@
       if (!$dom || $dom.nodeType !== 1) return { target: '', targetOptions: [] };
       
       const candidates = [];
-      const id = $dom.getAttribute('id');
-      const name = $dom.getAttribute('name');
+      const id = this.getValidId($dom);
+      const name = this.getValidName($dom);
       const tag = $dom.tagName.toLowerCase();
       const isLink = tag === 'a';
       
@@ -189,18 +191,18 @@
         }
       }
 
-      // ID (préféré)
-      if (id && id.length && !id.match(/^\d/)) {
+      // ID valide (préféré)
+      if (id) {
         candidates.push(`id=${id}`);
       }
 
-      // Name
-      if (name && name.length) {
+      // Name valide
+      if (name) {
         candidates.push(`name=${name}`);
       }
 
-      // XPath avec ID (si disponible)
-      if (id && id.length && !id.match(/^\d/)) {
+      // XPath avec ID (si disponible et valide)
+      if (id) {
         candidates.push(`xpath=//*[@id="${id}"]`);
         candidates.push(`xpath=//${tag}[@id='${id}']`);
       }
