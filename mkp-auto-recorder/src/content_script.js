@@ -269,282 +269,233 @@
   // ========== RECORDING STATE ==========
   let isRecording = false;
   let recordedCommands = [];
-  let lastRecordedCommand = null;
-  let lastRecordTime = 0;
-  let pendingInputElement = null;
-  let inputDebounceTimer = null;
-
-  // Minimum time between same commands (ms)
-  const DEBOUNCE_TIME = 300;
-  const INPUT_DEBOUNCE_TIME = 500;
+  let processedElements = new Set(); // Track elements we've already processed in this interaction
+  let lastCommandKey = ''; // Unique key for last command to prevent duplicates
+  let inputValues = new Map(); // Track input values to only record final value
 
   // ========== HELPER FUNCTIONS ==========
   
-  // Check if element is an input field (text, email, etc.)
+  // Generate unique key for a command
+  const getCommandKey = (cmd, target) => {
+    return `${cmd}|${target}`;
+  };
+
+  // Check if element is a text input
   const isTextInput = (el) => {
     if (!el) return false;
     const tagName = el.tagName.toLowerCase();
     if (tagName === 'textarea') return true;
     if (tagName === 'input') {
-      const type = (el.type || '').toLowerCase();
-      return ['text', 'email', 'password', 'search', 'tel', 'url', 'number'].includes(type);
+      const type = (el.type || 'text').toLowerCase();
+      return ['text', 'email', 'password', 'search', 'tel', 'url', 'number', ''].includes(type);
     }
     return false;
   };
 
-  // Check if element is a clickable input (checkbox, radio)
-  const isClickableInput = (el) => {
+  // Check if element is checkbox or radio
+  const isCheckableInput = (el) => {
     if (!el) return false;
-    const tagName = el.tagName.toLowerCase();
-    if (tagName === 'input') {
-      const type = (el.type || '').toLowerCase();
-      return ['checkbox', 'radio'].includes(type);
-    }
-    return false;
+    if (el.tagName.toLowerCase() !== 'input') return false;
+    const type = (el.type || '').toLowerCase();
+    return type === 'checkbox' || type === 'radio';
   };
 
-  // Check if this command is a duplicate of the last one
-  const isDuplicateCommand = (cmd) => {
-    if (!lastRecordedCommand) return false;
+  // Find the actual interactive element (for labels, spans, etc.)
+  const findInteractiveElement = (el) => {
+    if (!el) return null;
     
-    const now = Date.now();
-    if (now - lastRecordTime < DEBOUNCE_TIME) {
-      // Same command, same target within debounce time
-      if (cmd.Command === lastRecordedCommand.Command && 
-          cmd.Target === lastRecordedCommand.Target) {
-        return true;
-      }
+    // If it's already an input, return it
+    if (el.tagName.toLowerCase() === 'input' || 
+        el.tagName.toLowerCase() === 'select' || 
+        el.tagName.toLowerCase() === 'textarea') {
+      return el;
     }
-    return false;
+    
+    // Check if it's a label
+    if (el.tagName.toLowerCase() === 'label') {
+      const forId = el.getAttribute('for');
+      if (forId) {
+        return document.getElementById(forId);
+      }
+      // Check for nested input
+      return el.querySelector('input, select, textarea');
+    }
+    
+    // Check parent label
+    const parentLabel = el.closest('label');
+    if (parentLabel) {
+      const forId = parentLabel.getAttribute('for');
+      if (forId) {
+        return document.getElementById(forId);
+      }
+      return parentLabel.querySelector('input, select, textarea');
+    }
+    
+    return null;
   };
 
-  // Record a command with deduplication
+  // Record command with strict deduplication
   const recordCommand = (command) => {
-    // Skip if duplicate
-    if (isDuplicateCommand(command)) {
-      console.log('MKP Skipped duplicate:', command.Command, command.Target);
-      return;
+    const key = getCommandKey(command.Command, command.Target);
+    
+    // Strict duplicate check
+    if (key === lastCommandKey) {
+      console.log('MKP Skipped duplicate:', command.Command);
+      return false;
     }
-
-    lastRecordedCommand = command;
-    lastRecordTime = Date.now();
-
+    
+    lastCommandKey = key;
     recordedCommands.push(command);
+    
     chrome.runtime.sendMessage({
       type: 'COMMAND_RECORDED',
       command: command
     });
 
-    console.log('MKP Recorded:', command);
+    console.log('MKP Recorded:', command.Command, command.Target);
+    return true;
   };
 
   // ========== EVENT HANDLERS ==========
   
-  // Handle clicks - only record meaningful clicks
-  const recordClick = (e) => {
+  // Handle clicks
+  const handleClick = (e) => {
     if (!isRecording) return;
 
     const target = e.target;
-    const tagName = target.tagName.toLowerCase();
-
-    // Skip click recording for text inputs - we'll record the 'type' command instead
-    if (isTextInput(target)) {
+    
+    // Find the actual interactive element
+    const interactiveEl = findInteractiveElement(target);
+    
+    // Skip if clicking on a text input (we record 'type' instead)
+    if (isTextInput(target) || (interactiveEl && isTextInput(interactiveEl))) {
+      return;
+    }
+    
+    // Skip if clicking on checkbox/radio (we record via 'change' event)
+    if (isCheckableInput(target) || (interactiveEl && isCheckableInput(interactiveEl))) {
+      return;
+    }
+    
+    // For clicks on labels of checkable inputs, skip (change event will handle)
+    if (interactiveEl && isCheckableInput(interactiveEl)) {
       return;
     }
 
-    // For labels, find the associated input
-    let actualTarget = target;
-    if (tagName === 'label') {
-      const forId = target.getAttribute('for');
-      if (forId) {
-        const input = document.getElementById(forId);
-        if (input && isTextInput(input)) {
-          return; // Skip click on label for text input
-        }
-      }
-      // Check if label contains an input
-      const containedInput = target.querySelector('input, textarea');
-      if (containedInput && isTextInput(containedInput)) {
-        return;
-      }
-    }
+    // Record the click on the actual clicked element
+    const locator = getLocator(target);
+    if (!locator.Target) return;
 
-    // Skip clicks on elements that are part of an input container
-    const closestInput = target.closest('input, textarea');
-    if (closestInput && isTextInput(closestInput)) {
-      return;
-    }
-
-    // For checkboxes and radios, let the 'change' event handle it
-    if (isClickableInput(target)) {
-      return;
-    }
-
-    // Check parent for checkbox/radio (sometimes click is on span/label)
-    const parentLabel = target.closest('label');
-    if (parentLabel) {
-      const forId = parentLabel.getAttribute('for');
-      if (forId) {
-        const input = document.getElementById(forId);
-        if (input && isClickableInput(input)) {
-          return; // Let change event handle it
-        }
-      }
-    }
-
-    const locator = getLocator(actualTarget);
-
-    const command = {
+    recordCommand({
       Command: 'click',
       Target: locator.Target,
       Value: '',
       Targets: locator.Targets,
       Description: ''
-    };
-
-    recordCommand(command);
+    });
   };
 
-  // Handle input changes (text fields) - debounced
-  const recordInput = (e) => {
+  // Handle input changes (for text fields) - debounced via blur
+  const handleInput = (e) => {
     if (!isRecording) return;
-
-    const target = e.target;
     
+    const target = e.target;
     if (!isTextInput(target)) return;
+    
+    // Just track the value, we'll record on blur
+    const locator = getLocator(target);
+    inputValues.set(locator.Target, {
+      element: target,
+      locator: locator,
+      value: target.value
+    });
+  };
 
-    // Clear previous timer
-    if (inputDebounceTimer) {
-      clearTimeout(inputDebounceTimer);
-    }
-
-    pendingInputElement = target;
-
-    // Debounce: wait for user to stop typing
-    inputDebounceTimer = setTimeout(() => {
-      if (!isRecording || !pendingInputElement) return;
+  // Handle blur - finalize text input
+  const handleBlur = (e) => {
+    if (!isRecording) return;
+    
+    const target = e.target;
+    if (!isTextInput(target)) return;
+    
+    const locator = getLocator(target);
+    const tracked = inputValues.get(locator.Target);
+    
+    if (tracked && tracked.value) {
+      // Check if we already have a type command for this target
+      const existingIndex = recordedCommands.findIndex(
+        cmd => cmd.Command === 'type' && cmd.Target === locator.Target
+      );
       
-      const value = pendingInputElement.value;
-      if (!value && value !== '') return; // Skip empty
-
-      const locator = getLocator(pendingInputElement);
-
-      const command = {
-        Command: 'type',
-        Target: locator.Target,
-        Value: value,
-        Targets: locator.Targets,
-        Description: ''
-      };
-
-      // Check if we already have a type command for this element
-      // and update it instead of adding a new one
-      const lastCmd = recordedCommands[recordedCommands.length - 1];
-      if (lastCmd && lastCmd.Command === 'type' && lastCmd.Target === locator.Target) {
-        // Update the last command's value
-        lastCmd.Value = value;
-        console.log('MKP Updated last type command:', locator.Target, value);
+      if (existingIndex >= 0) {
+        // Update existing command
+        recordedCommands[existingIndex].Value = tracked.value;
+        console.log('MKP Updated type:', locator.Target);
       } else {
-        recordCommand(command);
-      }
-
-      pendingInputElement = null;
-    }, INPUT_DEBOUNCE_TIME);
-  };
-
-  // Handle blur on input fields - finalize any pending input
-  const recordBlur = (e) => {
-    if (!isRecording) return;
-
-    const target = e.target;
-    
-    if (!isTextInput(target)) return;
-
-    // If there's a pending input and it's this element, record it now
-    if (pendingInputElement === target && inputDebounceTimer) {
-      clearTimeout(inputDebounceTimer);
-      inputDebounceTimer = null;
-
-      const value = target.value;
-      if (value || value === '') {
-        const locator = getLocator(target);
-
-        const command = {
+        // Add new command
+        recordCommand({
           Command: 'type',
           Target: locator.Target,
-          Value: value,
+          Value: tracked.value,
           Targets: locator.Targets,
           Description: ''
-        };
-
-        // Check if we already have a type command for this element
-        const lastCmd = recordedCommands[recordedCommands.length - 1];
-        if (lastCmd && lastCmd.Command === 'type' && lastCmd.Target === locator.Target) {
-          lastCmd.Value = value;
-          console.log('MKP Updated on blur:', locator.Target, value);
-        } else if (value) { // Only record if there's a value
-          recordCommand(command);
-        }
+        });
       }
-
-      pendingInputElement = null;
+      
+      inputValues.delete(locator.Target);
     }
   };
 
   // Handle change events (checkboxes, radios, selects)
-  const recordChange = (e) => {
+  const handleChange = (e) => {
     if (!isRecording) return;
 
     const target = e.target;
     const tagName = target.tagName.toLowerCase();
 
-    // Handle select dropdowns
+    // Skip text inputs (handled by blur)
+    if (isTextInput(target)) return;
+
+    // Handle select
     if (tagName === 'select') {
       const locator = getLocator(target);
       const selectedOption = target.options[target.selectedIndex];
-      const value = selectedOption ? `label=${selectedOption.text}` : '';
+      if (!selectedOption) return;
 
-      const command = {
+      recordCommand({
         Command: 'select',
         Target: locator.Target,
-        Value: value,
+        Value: `label=${selectedOption.text}`,
         Targets: locator.Targets,
         Description: ''
-      };
-
-      recordCommand(command);
+      });
       return;
     }
 
-    // Handle checkboxes and radios
-    if (tagName === 'input') {
-      const type = (target.type || '').toLowerCase();
-      
-      if (type === 'checkbox') {
-        const locator = getLocator(target);
-        const command = {
-          Command: target.checked ? 'check' : 'uncheck',
-          Target: locator.Target,
-          Value: '',
-          Targets: locator.Targets,
-          Description: ''
-        };
-        recordCommand(command);
-        return;
-      }
+    // Handle checkbox
+    if (tagName === 'input' && target.type === 'checkbox') {
+      const locator = getLocator(target);
+      recordCommand({
+        Command: target.checked ? 'check' : 'uncheck',
+        Target: locator.Target,
+        Value: '',
+        Targets: locator.Targets,
+        Description: ''
+      });
+      return;
+    }
 
-      if (type === 'radio') {
-        const locator = getLocator(target);
-        const command = {
-          Command: 'click',
-          Target: locator.Target,
-          Value: '',
-          Targets: locator.Targets,
-          Description: ''
-        };
-        recordCommand(command);
-        return;
-      }
+    // Handle radio
+    if (tagName === 'input' && target.type === 'radio') {
+      const locator = getLocator(target);
+      recordCommand({
+        Command: 'click',
+        Target: locator.Target,
+        Value: '',
+        Targets: locator.Targets,
+        Description: ''
+      });
+      return;
     }
   };
 
@@ -552,53 +503,48 @@
   const startRecording = () => {
     isRecording = true;
     recordedCommands = [];
-    lastRecordedCommand = null;
-    lastRecordTime = 0;
-    pendingInputElement = null;
-    if (inputDebounceTimer) {
-      clearTimeout(inputDebounceTimer);
-      inputDebounceTimer = null;
-    }
+    lastCommandKey = '';
+    inputValues.clear();
 
-    document.addEventListener('click', recordClick, true);
-    document.addEventListener('input', recordInput, true);
-    document.addEventListener('blur', recordBlur, true);
-    document.addEventListener('change', recordChange, true);
+    document.addEventListener('click', handleClick, true);
+    document.addEventListener('input', handleInput, true);
+    document.addEventListener('blur', handleBlur, true);
+    document.addEventListener('change', handleChange, true);
 
     console.log('MKP Recording started');
   };
 
   const stopRecording = () => {
-    // Finalize any pending input
-    if (pendingInputElement && inputDebounceTimer) {
-      clearTimeout(inputDebounceTimer);
-      inputDebounceTimer = null;
-      
-      const value = pendingInputElement.value;
-      if (value) {
-        const locator = getLocator(pendingInputElement);
-        const lastCmd = recordedCommands[recordedCommands.length - 1];
-        if (!(lastCmd && lastCmd.Command === 'type' && lastCmd.Target === locator.Target)) {
-          recordCommand({
+    // Finalize any pending inputs
+    inputValues.forEach((tracked, targetKey) => {
+      if (tracked.value) {
+        const existingIndex = recordedCommands.findIndex(
+          cmd => cmd.Command === 'type' && cmd.Target === targetKey
+        );
+        
+        if (existingIndex >= 0) {
+          recordedCommands[existingIndex].Value = tracked.value;
+        } else {
+          recordedCommands.push({
             Command: 'type',
-            Target: locator.Target,
-            Value: value,
-            Targets: locator.Targets,
+            Target: targetKey,
+            Value: tracked.value,
+            Targets: tracked.locator.Targets,
             Description: ''
           });
         }
       }
-      pendingInputElement = null;
-    }
+    });
+    inputValues.clear();
 
     isRecording = false;
 
-    document.removeEventListener('click', recordClick, true);
-    document.removeEventListener('input', recordInput, true);
-    document.removeEventListener('blur', recordBlur, true);
-    document.removeEventListener('change', recordChange, true);
+    document.removeEventListener('click', handleClick, true);
+    document.removeEventListener('input', handleInput, true);
+    document.removeEventListener('blur', handleBlur, true);
+    document.removeEventListener('change', handleChange, true);
 
-    console.log('MKP Recording stopped');
+    console.log('MKP Recording stopped, commands:', recordedCommands.length);
   };
 
   // ========== MESSAGE LISTENER ==========
@@ -663,52 +609,48 @@
     }
   };
 
-  // Main element finder with fallback support (based on UI Vision getElementByLocatorWithTargetOptions)
+  // Main element finder with fallback support
   function findElementWithFallback(target, targets, shouldWaitForVisible = false) {
     // Try main target first
     try {
       const el = getElementByLocator(target, shouldWaitForVisible);
       if (el) {
-        console.log(`MKP: Element found with primary locator: ${target}`);
+        console.log(`MKP: Element found with primary locator`);
         return el;
       }
     } catch (e) {
-      console.log(`MKP: Primary locator failed: ${target}`, e.message);
+      console.log(`MKP: Primary locator failed:`, e.message);
     }
 
-    // Try fallback targets (like UI Vision targetOptions)
+    // Try fallback targets
     if (targets && targets.length > 0) {
       for (let i = 0; i < targets.length; i++) {
         const altTarget = targets[i];
-        if (altTarget === target) continue; // Skip if same as primary
+        if (altTarget === target) continue;
         
         try {
           const el = getElementByLocator(altTarget, shouldWaitForVisible);
           if (el) {
-            console.log(`MKP: Element found with fallback locator [${i}]: ${altTarget}`);
+            console.log(`MKP: Element found with fallback [${i}]`);
             return el;
           }
-        } catch (e) {
-          console.log(`MKP: Fallback locator [${i}] failed: ${altTarget}`);
-        }
+        } catch (e) {}
       }
     }
 
     return null;
   }
 
-  // Get element by locator (from UI Vision dom_utils.ts getElementByLocator)
+  // Get element by locator (from UI Vision dom_utils.ts)
   function getElementByLocator(str, shouldWaitForVisible = false) {
     if (!str) return null;
     
     const i = str.indexOf('=');
     let el = null;
 
-    // Handle pure xpath starting with /
     if (/^\//.test(str)) {
       el = getElementByXPath(str);
     } else if (i === -1) {
-      // No '=' found and not xpath - invalid
       throw new Error('Invalid locator: ' + str);
     } else {
       const method = str.substr(0, i);
@@ -719,58 +661,46 @@
         case 'id':
           el = document.getElementById(value);
           break;
-
         case 'name':
           el = document.getElementsByName(value)[0];
           break;
-
         case 'identifier':
           el = document.getElementById(value) || document.getElementsByName(value)[0];
           break;
-
         case 'link':
         case 'linktext': {
           const links = Array.from(document.getElementsByTagName('a'));
-          // Support @POS= syntax like UI Vision
           let match = value.match(/^(.+)@POS=(\d+)$/i);
           let realVal = value;
           let index = 0;
-
           if (match) {
             realVal = match[1];
             index = parseInt(match[2]) - 1;
           }
-
           const candidates = links.filter(link => globMatch(realVal, domText(link)));
           el = candidates[index];
           break;
         }
-
         case 'partiallinktext': {
           const links = Array.from(document.getElementsByTagName('a'));
           let match = value.match(/^(.+)@POS=(\d+)$/i);
           let realVal = value;
           let index = 0;
-
           if (match) {
             realVal = match[1];
             index = parseInt(match[2]) - 1;
           }
-
           const pattern = `*${realVal}*`;
           const candidates = links.filter(link => globMatch(pattern, domText(link)));
           el = candidates[index];
           break;
         }
-
         case 'css':
           el = document.querySelector(value);
           break;
-
         case 'xpath':
           el = getElementByXPath(value);
           break;
-
         default:
           throw new Error('Unsupported locator method: ' + method);
       }
@@ -787,18 +717,17 @@
     return el;
   }
 
-  // Execute a single command (based on UI Vision command_runner.js run function)
+  // Execute a single command
   async function executeCommand(cmd) {
     const command = cmd.Command ? cmd.Command.toLowerCase() : '';
     const target = cmd.Target || '';
     const value = cmd.Value || '';
     const targets = cmd.Targets || [];
 
-    console.log('MKP Executing:', command, target, value);
+    console.log('MKP Executing:', command, target);
 
     switch (command) {
       case 'open': {
-        // Navigate to URL
         if (target) {
           window.location.href = target;
         }
@@ -808,31 +737,16 @@
       case 'click':
       case 'clickandwait': {
         const el = findElementWithFallback(target, targets);
-        if (!el) {
-          throw new Error(`Element not found: ${target}`);
-        }
+        if (!el) throw new Error(`Element not found: ${target}`);
 
-        // Scroll element into view (like UI Vision)
-        try {
-          el.scrollIntoView({ block: 'center' });
-        } catch (e) {
-          console.log('MKP: scrollIntoView failed', e);
-        }
+        try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
 
-        // Dispatch mouse events in sequence (from UI Vision command_runner.js lines 447-458)
         ['mousedown', 'mouseup', 'click'].forEach(eventType => {
           if (eventType === 'click' && typeof el.click === 'function') {
             el.click();
             return;
           }
-
-          el.dispatchEvent(
-            new MouseEvent(eventType, {
-              view: window,
-              bubbles: true,
-              cancelable: true
-            })
-          );
+          el.dispatchEvent(new MouseEvent(eventType, { view: window, bubbles: true, cancelable: true }));
         });
 
         focusIfEditable(el);
@@ -841,23 +755,16 @@
 
       case 'type': {
         const el = findElementWithFallback(target, targets);
-        if (!el) {
-          throw new Error(`Element not found: ${target}`);
-        }
+        if (!el) throw new Error(`Element not found: ${target}`);
 
         const tag = el.tagName.toLowerCase();
         if (tag !== 'input' && tag !== 'textarea') {
           throw new Error('Element is neither input nor textarea');
         }
 
-        // Scroll and focus (like UI Vision)
-        try {
-          el.scrollIntoView({ block: 'center' });
-        } catch (e) {}
-
+        try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
         focusIfEditable(el);
 
-        // Set value and dispatch events (from UI Vision command_runner.js lines 573-584)
         el.value = '';
         el.value = value;
         el.dispatchEvent(new Event('input', { target: el, bubbles: true }));
@@ -869,14 +776,11 @@
       case 'select':
       case 'selectandwait': {
         const el = findElementWithFallback(target, targets);
-        if (!el) {
-          throw new Error(`Element not found: ${target}`);
-        }
+        if (!el) throw new Error(`Element not found: ${target}`);
 
         const options = Array.from(el.getElementsByTagName('option'));
         const i = value.indexOf('=');
         
-        // Parse select value format: label=xxx, value=xxx, index=xxx, id=xxx
         let optionType = 'label';
         let optionValue = value;
         
@@ -900,20 +804,13 @@
             option = options.find(op => op.value === optionValue);
             break;
           default:
-            // Try matching by text directly (for simple "optionText" format)
             option = options.find(op => domText(op).trim() === value || op.text === value);
         }
 
-        if (!option) {
-          throw new Error(`Cannot find option: ${value}`);
-        }
+        if (!option) throw new Error(`Cannot find option: ${value}`);
 
-        // Scroll into view
-        try {
-          el.scrollIntoView({ block: 'center' });
-        } catch (e) {}
+        try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
 
-        // Set selection and dispatch change (from UI Vision command_runner.js)
         el.value = option.value;
         el.dispatchEvent(new Event('change', { target: el, bubbles: true }));
 
@@ -922,10 +819,7 @@
 
       case 'check': {
         const el = findElementWithFallback(target, targets);
-        if (!el) {
-          throw new Error(`Element not found: ${target}`);
-        }
-
+        if (!el) throw new Error(`Element not found: ${target}`);
         el.checked = true;
         el.dispatchEvent(new Event('change', { target: el, bubbles: true }));
         return { success: true };
@@ -933,10 +827,7 @@
 
       case 'uncheck': {
         const el = findElementWithFallback(target, targets);
-        if (!el) {
-          throw new Error(`Element not found: ${target}`);
-        }
-
+        if (!el) throw new Error(`Element not found: ${target}`);
         el.checked = false;
         el.dispatchEvent(new Event('change', { target: el, bubbles: true }));
         return { success: true };
@@ -944,77 +835,56 @@
 
       case 'mouseover': {
         const el = findElementWithFallback(target, targets);
-        if (!el) {
-          throw new Error(`Element not found: ${target}`);
-        }
-
-        try {
-          el.scrollIntoView({ block: 'center' });
-        } catch (e) {}
-
+        if (!el) throw new Error(`Element not found: ${target}`);
+        try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
         el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
         return { success: true };
       }
 
       case 'sendkeys': {
         const el = findElementWithFallback(target, targets);
-        if (!el) {
-          throw new Error(`Element not found: ${target}`);
-        }
-
+        if (!el) throw new Error(`Element not found: ${target}`);
         focusIfEditable(el);
-        
-        // Send keys one by one
         for (const char of value) {
           el.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
           el.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
           el.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true }));
         }
-
         return { success: true };
       }
 
       case 'waitforvisible':
       case 'waitforelementvisible': {
-        // Wait up to 10 seconds for element to be visible
         const maxWait = 10000;
         const interval = 200;
         let waited = 0;
-
         while (waited < maxWait) {
           try {
             const el = findElementWithFallback(target, targets, true);
             if (el) return { success: true };
           } catch (e) {}
-          
           await new Promise(r => setTimeout(r, interval));
           waited += interval;
         }
-
         throw new Error(`Timeout waiting for visible element: ${target}`);
       }
 
       case 'waitforelementpresent': {
-        // Wait up to 10 seconds for element to exist
         const maxWait = 10000;
         const interval = 200;
         let waited = 0;
-
         while (waited < maxWait) {
           try {
             const el = findElementWithFallback(target, targets, false);
             if (el) return { success: true };
           } catch (e) {}
-          
           await new Promise(r => setTimeout(r, interval));
           waited += interval;
         }
-
         throw new Error(`Timeout waiting for element: ${target}`);
       }
 
       case 'pause': {
-        // Pause for specified milliseconds
         const ms = parseInt(target) || parseInt(value) || 1000;
         await new Promise(r => setTimeout(r, ms));
         return { success: true };
@@ -1027,26 +897,17 @@
 
       case 'verifytext': {
         const el = findElementWithFallback(target, targets);
-        if (!el) {
-          throw new Error(`Element not found: ${target}`);
-        }
-
+        if (!el) throw new Error(`Element not found: ${target}`);
         const text = domText(el);
         if (!globMatch(value, text)) {
-          return {
-            success: false,
-            error: `Text not matched. Expected: "${value}", Actual: "${text}"`
-          };
+          return { success: false, error: `Text not matched. Expected: "${value}", Actual: "${text}"` };
         }
         return { success: true };
       }
 
       case 'asserttext': {
         const el = findElementWithFallback(target, targets);
-        if (!el) {
-          throw new Error(`Element not found: ${target}`);
-        }
-
+        if (!el) throw new Error(`Element not found: ${target}`);
         const text = domText(el);
         if (!globMatch(value, text)) {
           throw new Error(`Text not matched. Expected: "${value}", Actual: "${text}"`);
@@ -1056,57 +917,26 @@
 
       case 'storetext': {
         const el = findElementWithFallback(target, targets);
-        if (!el) {
-          throw new Error(`Element not found: ${target}`);
-        }
-
-        return {
-          success: true,
-          vars: { [value]: domText(el) }
-        };
+        if (!el) throw new Error(`Element not found: ${target}`);
+        return { success: true, vars: { [value]: domText(el) } };
       }
 
       case 'storetitle': {
-        return {
-          success: true,
-          vars: { [value]: document.title }
-        };
+        return { success: true, vars: { [value]: document.title } };
       }
 
       case 'editcontent': {
         const el = findElementWithFallback(target, targets);
-        if (!el) {
-          throw new Error(`Element not found: ${target}`);
-        }
-
-        if (el.contentEditable !== 'true') {
-          throw new Error('Target is not contenteditable');
-        }
-
+        if (!el) throw new Error(`Element not found: ${target}`);
+        if (el.contentEditable !== 'true') throw new Error('Target is not contenteditable');
         el.focus();
         el.innerHTML = value;
         el.blur();
-
         return { success: true };
       }
 
       default:
         throw new Error(`Unsupported command: ${command}`);
-    }
-  }
-
-  // Legacy findElement function for backward compatibility
-  async function findElement(target, targets) {
-    return findElementWithFallback(target, targets || []);
-  }
-
-  // Legacy findElementByLocator for backward compatibility  
-  function findElementByLocator(locator) {
-    try {
-      return getElementByLocator(locator, false);
-    } catch (e) {
-      console.error('Error finding element:', e);
-      return null;
     }
   }
 
