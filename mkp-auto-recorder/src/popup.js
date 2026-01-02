@@ -95,48 +95,69 @@ btnStop.addEventListener('click', async () => {
   await loadScenario();
 });
 
-// Play scenario
+// Play scenario - delegates to background for persistence
 btnPlay.addEventListener('click', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   
+  // Ensure scenario is synced
+  await chrome.runtime.sendMessage({
+    type: 'SET_SCENARIO',
+    scenario: currentScenario
+  });
+
   statusDiv.className = 'status recording';
   statusDiv.textContent = '▶️ Lecture en cours...';
   btnPlay.disabled = true;
   btnStart.disabled = true;
 
-  try {
-    for (let i = 0; i < currentScenario.Commands.length; i++) {
-      const cmd = currentScenario.Commands[i];
+  // Start playback in background (persists even if popup closes)
+  await chrome.runtime.sendMessage({
+    type: 'PLAY_SCENARIO',
+    tabId: tab.id
+  });
+
+  // Poll playback state
+  const checkPlayback = setInterval(async () => {
+    const response = await chrome.runtime.sendMessage({ type: 'GET_PLAYBACK_STATE' });
+    const state = response.state;
+
+    if (state.status === 'playing') {
+      statusDiv.textContent = `▶️ Lecture ${state.currentIndex + 1}/${state.total}...`;
       
       // Highlight current command
       const items = commandsDiv.querySelectorAll('.command-item');
       items.forEach((item, idx) => {
-        item.style.background = idx === i ? '#fff3cd' : '';
+        item.style.background = idx === state.currentIndex ? '#fff3cd' : '';
       });
-
-      // Execute command
-      await chrome.tabs.sendMessage(tab.id, {
-        type: 'EXECUTE_COMMAND',
-        command: cmd
+    } else if (state.status === 'completed') {
+      clearInterval(checkPlayback);
+      statusDiv.className = 'status stopped';
+      statusDiv.textContent = '✅ Lecture terminée';
+      btnPlay.disabled = false;
+      btnStart.disabled = false;
+      commandsDiv.querySelectorAll('.command-item').forEach(item => {
+        item.style.background = '';
       });
-
-      // Wait a bit between commands
-      await new Promise(resolve => setTimeout(resolve, 500));
+    } else if (state.status === 'error') {
+      clearInterval(checkPlayback);
+      statusDiv.className = 'status stopped';
+      statusDiv.textContent = '❌ ' + (state.error || 'Erreur');
+      btnPlay.disabled = false;
+      btnStart.disabled = false;
+      commandsDiv.querySelectorAll('.command-item').forEach(item => {
+        item.style.background = '';
+      });
+    } else if (state.status === 'stopped') {
+      clearInterval(checkPlayback);
+      statusDiv.className = 'status stopped';
+      statusDiv.textContent = '⏸️ Lecture arrêtée';
+      btnPlay.disabled = false;
+      btnStart.disabled = false;
+      commandsDiv.querySelectorAll('.command-item').forEach(item => {
+        item.style.background = '';
+      });
     }
-
-    statusDiv.className = 'status stopped';
-    statusDiv.textContent = '✅ Lecture terminée';
-  } catch (error) {
-    statusDiv.className = 'status stopped';
-    statusDiv.textContent = '❌ Erreur: ' + error.message;
-  } finally {
-    btnPlay.disabled = false;
-    btnStart.disabled = false;
-    // Remove highlights
-    commandsDiv.querySelectorAll('.command-item').forEach(item => {
-      item.style.background = '';
-    });
-  }
+  }, 200);
 });
 
 // Export scenario
