@@ -810,6 +810,139 @@ body {
 /* Groups List          */
 /* ==================== */
 
+.group-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  transition: var(--transition);
+  overflow: hidden;
+}
+
+.group-card:hover {
+  border-color: var(--primary);
+  box-shadow: var(--shadow);
+}
+
+.group-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 0;
+}
+
+.group-card-header .toggle-icon {
+  transition: transform 0.2s ease;
+  margin-left: 8px;
+  opacity: 0.7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.group-card-header .toggle-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.group-card.expanded .toggle-icon {
+  transform: rotate(90deg);
+}
+
+.group-name {
+  display: flex;
+  align-items: center;
+  flex-grow: 1;
+}
+
+.group-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: 8px;
+}
+
+.group-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.group-scenarios {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease-out;
+  margin: 0;
+  padding-left: 20px;
+  border-left: 2px solid transparent;
+}
+
+.group-card.expanded .group-scenarios {
+  max-height: 1000px; /* Valeur arbitrairement grande pour l'animation */
+  margin-top: 12px;
+  border-left-color: var(--border-color);
+  padding-left: 16px;
+}
+
+.group-scenario-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color-light);
+  font-size: 13px;
+}
+
+.group-scenario-item:last-child {
+  border-bottom: none;
+}
+
+.group-scenario-name {
+  flex-grow: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 8px;
+  color: var(--text-secondary);
+}
+
+.group-scenario-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.group-scenario-item:hover .group-scenario-actions {
+  opacity: 1;
+}
+
+.group-scenario-actions button {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.group-scenario-actions button:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.group-scenario-actions button svg {
+  width: 14px;
+  height: 14px;
+}
+
 .groups-list {
   max-height: 320px;
   overflow-y: auto;

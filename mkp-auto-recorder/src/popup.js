@@ -777,63 +777,162 @@ function refreshGroupsList() {
     return;
   }
 
-  const html = state.groups.map(group => {
-    const scenarioCount = state.scenarios.filter(s => s.groupId === group.id).length;
+  // Trier les groupes par nom
+  const sortedGroups = [...state.groups].sort((a, b) => a.name.localeCompare(b.name));
+  
+  const html = sortedGroups.map(group => {
+    const groupScenarios = state.scenarios
+      .filter(s => s.groupId === group.id)
+      .sort((a, b) => a.Name.localeCompare(b.Name));
+    
+    const scenarioCount = groupScenarios.length;
+    const isExpanded = state.expandedGroups && state.expandedGroups[group.id];
     
     return `
-      <div class="group-card" data-id="${group.id}">
+      <div class="group-card ${isExpanded ? 'expanded' : ''}" data-id="${group.id}">
         <div class="group-card-header">
           <span class="group-name">
+            <span class="toggle-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </span>
             <span class="group-name-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M3 7a2 2 0 0 1 2-2h5l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
               </svg>
             </span>
             ${escapeHtml(group.name)}
+            <span class="group-count">${scenarioCount} scénario(s)</span>
           </span>
-          <span class="group-count">${scenarioCount} scénario(s)</span>
-        </div>
-        <div class="group-actions">
-          <button class="btn btn-xs btn-primary btn-play-group" data-id="${group.id}" ${scenarioCount === 0 ? 'disabled' : ''}>
-            <span class="btn-icon" aria-hidden="true">
+          <div class="group-actions">
+            <button class="btn btn-xs btn-primary btn-play-group" data-id="${group.id}" ${scenarioCount === 0 ? 'disabled' : ''}>
+              <span class="btn-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="6 3 20 12 6 21 6 3"></polygon>
+                </svg>
+              </span>
+              Rejouer
+            </button>
+            <button class="cmd-icon-btn btn-rename-group" data-id="${group.id}" title="Renommer" aria-label="Renommer">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="6 3 20 12 6 21 6 3"></polygon>
+                <path d="M12 20h9"></path>
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
               </svg>
-            </span>
-            Rejouer
-          </button>
-          <button class="cmd-icon-btn btn-rename-group" data-id="${group.id}" title="Renommer" aria-label="Renommer">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 20h9"></path>
-              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
-            </svg>
-          </button>
-          <button class="cmd-icon-btn btn-delete-group" data-id="${group.id}" title="Supprimer" aria-label="Supprimer">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
-              <path d="M10 11v6"></path>
-              <path d="M14 11v6"></path>
-              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
-            </svg>
-          </button>
+            </button>
+            <button class="cmd-icon-btn btn-delete-group" data-id="${group.id}" title="Supprimer" aria-label="Supprimer">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+                <path d="M10 11v6"></path>
+                <path d="M14 11v6"></path>
+                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+              </svg>
+            </button>
+          </div>
         </div>
+        ${scenarioCount > 0 ? `
+          <div class="group-scenarios" style="${isExpanded ? '' : 'display: none;'}">
+            ${groupScenarios.map(scenario => `
+              <div class="group-scenario-item" data-id="${scenario.id}">
+                <span class="group-scenario-name" title="${escapeHtml(scenario.Name)}">
+                  ${escapeHtml(scenario.Name)}
+                </span>
+                <div class="group-scenario-actions">
+                  <button class="btn-load-scenario" title="Charger ce scénario" data-id="${scenario.id}">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                  </button>
+                  <button class="btn-edit-scenario" title="Éditer ce scénario" data-id="${scenario.id}">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 20h9"></path>
+                      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
       </div>
     `;
   }).join('');
 
   elements.groupsList.innerHTML = html;
 
+  // Gestion du clic sur l'en-tête du groupe pour le plier/déplier
+  elements.groupsList.querySelectorAll('.group-card-header').forEach(header => {
+    const card = header.closest('.group-card');
+    const groupId = card.dataset.id;
+    const scenariosContainer = card.querySelector('.group-scenarios');
+    
+    header.addEventListener('click', (e) => {
+      // Ne pas déclencher si le clic est sur un bouton d'action
+      if (e.target.closest('button')) return;
+      
+      const isExpanded = card.classList.toggle('expanded');
+      
+      // Mettre à jour l'état d'expansion
+      state.expandedGroups = state.expandedGroups || {};
+      state.expandedGroups[groupId] = isExpanded;
+      
+      // Animer l'ouverture/fermeture
+      if (scenariosContainer) {
+        if (isExpanded) {
+          scenariosContainer.style.display = 'block';
+          scenariosContainer.style.maxHeight = scenariosContainer.scrollHeight + 'px';
+        } else {
+          scenariosContainer.style.maxHeight = '0';
+          setTimeout(() => {
+            if (!card.classList.contains('expanded')) {
+              scenariosContainer.style.display = 'none';
+            }
+          }, 300); // Correspond à la durée de la transition
+        }
+      }
+    });
+  });
+
+  // Gestion des boutons d'action des scénarios
+  elements.groupsList.querySelectorAll('.btn-load-scenario').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      loadScenario(btn.dataset.id);
+      // Activer l'onglet d'enregistrement
+      document.querySelector('[data-tab="recorder"]').click();
+    });
+  });
+
+  elements.groupsList.querySelectorAll('.btn-edit-scenario').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openEditScenarioModal(btn.dataset.id);
+    });
+  });
+
+  // Gestion des boutons de groupe
   elements.groupsList.querySelectorAll('.btn-play-group').forEach(btn => {
-    btn.addEventListener('click', () => openGroupPlayModal(btn.dataset.id));
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openGroupPlayModal(btn.dataset.id);
+    });
   });
 
   elements.groupsList.querySelectorAll('.btn-rename-group').forEach(btn => {
-    btn.addEventListener('click', () => renameGroup(btn.dataset.id));
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      renameGroup(btn.dataset.id);
+    });
   });
 
   elements.groupsList.querySelectorAll('.btn-delete-group').forEach(btn => {
-    btn.addEventListener('click', () => deleteGroup(btn.dataset.id));
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteGroup(btn.dataset.id);
+    });
   });
 }
 
@@ -1238,6 +1337,9 @@ function stopPolling() {
 // ==================== INIT ====================
 
 async function init() {
+  // Initialiser l'état des groupes dépliés
+  state.expandedGroups = state.expandedGroups || {};
+  
   await loadData();
   await loadCurrentScenario();
   await loadRecordingState();
