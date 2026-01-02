@@ -404,98 +404,492 @@
     return true;
   });
 
-  // ========== COMMAND EXECUTOR (PLAYER) ==========
-  async function executeCommand(cmd) {
-    console.log('MKP Executing:', cmd.Command, cmd.Target);
+  // ========== COMMAND EXECUTOR (PLAYER) - Based on UI Vision command_runner.js ==========
 
-    const element = await findElement(cmd.Target, cmd.Targets || []);
-    
-    if (!element) {
-      throw new Error(`Element not found: ${cmd.Target}`);
+  // Check if element is visible (from UI Vision dom_utils.ts)
+  const isVisible = (el) => {
+    if (el === window.document) return true;
+    if (!el) return true;
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.opacity === '0' || style.visibility === 'hidden') return false;
+    return isVisible(el.parentNode);
+  };
+
+  // Get text content (from UI Vision dom_utils.ts)
+  const domText = ($dom) => {
+    const it = $dom.innerText ? $dom.innerText.trim() : '';
+    const tc = $dom.textContent || '';
+    const pos = tc.toUpperCase().indexOf(it.toUpperCase());
+    return pos === -1 ? it : tc.substr(pos, it.length);
+  };
+
+  // Simple glob match (from UI Vision)
+  const globMatch = (pattern, text) => {
+    if (!pattern.includes('*')) {
+      return pattern === text;
     }
+    const regexPattern = pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*/g, '.*')
+      .replace(/\?/g, '.');
+    const regex = new RegExp(`^${regexPattern}$`, 'i');
+    return regex.test(text);
+  };
 
-    switch (cmd.Command.toLowerCase()) {
-      case 'click':
-        element.click();
-        break;
-
-      case 'type':
-        if (element.tagName.toLowerCase() === 'input' || element.tagName.toLowerCase() === 'textarea') {
-          element.value = cmd.Value;
-          element.dispatchEvent(new Event('input', { bubbles: true }));
-          element.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        break;
-
-      case 'select':
-        if (element.tagName.toLowerCase() === 'select') {
-          const options = Array.from(element.options);
-          const option = options.find(opt => opt.text === cmd.Value);
-          if (option) {
-            element.value = option.value;
-            element.dispatchEvent(new Event('change', { bubbles: true }));
-          }
-        }
-        break;
-
-      case 'check':
-        if (element.type === 'checkbox' || element.type === 'radio') {
-          element.checked = true;
-          element.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        break;
-
-      case 'uncheck':
-        if (element.type === 'checkbox') {
-          element.checked = false;
-          element.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        break;
-
-      default:
-        throw new Error(`Unknown command: ${cmd.Command}`);
+  // Focus if element is editable (from UI Vision command_runner.js)
+  const focusIfEditable = (el) => {
+    const tag = el.tagName.toLowerCase();
+    const isEditable = (tag === 'input' || tag === 'textarea' || el.contentEditable === 'true');
+    if (isEditable && typeof el.focus === 'function') {
+      el.focus();
     }
+  };
 
-    return { success: true };
-  }
-
-  async function findElement(target, targets) {
+  // Main element finder with fallback support (based on UI Vision getElementByLocatorWithTargetOptions)
+  function findElementWithFallback(target, targets, shouldWaitForVisible = false) {
     // Try main target first
-    let element = findElementByLocator(target);
-    if (element) return element;
-
-    // Try alternative targets
-    for (const alt of targets) {
-      element = findElementByLocator(alt);
-      if (element) return element;
-    }
-
-    return null;
-  }
-
-  function findElementByLocator(locator) {
     try {
-      if (locator.startsWith('id=')) {
-        const id = locator.substring(3);
-        return document.getElementById(id);
-      } else if (locator.startsWith('name=')) {
-        const name = locator.substring(5);
-        return document.querySelector(`[name="${name}"]`);
-      } else if (locator.startsWith('xpath=')) {
-        const xpath = locator.substring(6);
-        return getElementByXPath(xpath);
-      } else if (locator.startsWith('css=')) {
-        const css = locator.substring(4);
-        return document.querySelector(css);
-      } else if (locator.startsWith('linkText=')) {
-        const text = locator.substring(9);
-        const links = Array.from(document.getElementsByTagName('a'));
-        return links.find(a => a.innerText.trim() === text);
+      const el = getElementByLocator(target, shouldWaitForVisible);
+      if (el) {
+        console.log(`MKP: Element found with primary locator: ${target}`);
+        return el;
       }
     } catch (e) {
-      console.error('Error finding element:', e);
+      console.log(`MKP: Primary locator failed: ${target}`, e.message);
     }
+
+    // Try fallback targets (like UI Vision targetOptions)
+    if (targets && targets.length > 0) {
+      for (let i = 0; i < targets.length; i++) {
+        const altTarget = targets[i];
+        if (altTarget === target) continue; // Skip if same as primary
+        
+        try {
+          const el = getElementByLocator(altTarget, shouldWaitForVisible);
+          if (el) {
+            console.log(`MKP: Element found with fallback locator [${i}]: ${altTarget}`);
+            return el;
+          }
+        } catch (e) {
+          console.log(`MKP: Fallback locator [${i}] failed: ${altTarget}`);
+        }
+      }
+    }
+
     return null;
+  }
+
+  // Get element by locator (from UI Vision dom_utils.ts getElementByLocator)
+  function getElementByLocator(str, shouldWaitForVisible = false) {
+    if (!str) return null;
+    
+    const i = str.indexOf('=');
+    let el = null;
+
+    // Handle pure xpath starting with /
+    if (/^\//.test(str)) {
+      el = getElementByXPath(str);
+    } else if (i === -1) {
+      // No '=' found and not xpath - invalid
+      throw new Error('Invalid locator: ' + str);
+    } else {
+      const method = str.substr(0, i);
+      const value = str.substr(i + 1);
+      const lowerMethod = method.toLowerCase();
+
+      switch (lowerMethod) {
+        case 'id':
+          el = document.getElementById(value);
+          break;
+
+        case 'name':
+          el = document.getElementsByName(value)[0];
+          break;
+
+        case 'identifier':
+          el = document.getElementById(value) || document.getElementsByName(value)[0];
+          break;
+
+        case 'link':
+        case 'linktext': {
+          const links = Array.from(document.getElementsByTagName('a'));
+          // Support @POS= syntax like UI Vision
+          let match = value.match(/^(.+)@POS=(\d+)$/i);
+          let realVal = value;
+          let index = 0;
+
+          if (match) {
+            realVal = match[1];
+            index = parseInt(match[2]) - 1;
+          }
+
+          const candidates = links.filter(link => globMatch(realVal, domText(link)));
+          el = candidates[index];
+          break;
+        }
+
+        case 'partiallinktext': {
+          const links = Array.from(document.getElementsByTagName('a'));
+          let match = value.match(/^(.+)@POS=(\d+)$/i);
+          let realVal = value;
+          let index = 0;
+
+          if (match) {
+            realVal = match[1];
+            index = parseInt(match[2]) - 1;
+          }
+
+          const pattern = `*${realVal}*`;
+          const candidates = links.filter(link => globMatch(pattern, domText(link)));
+          el = candidates[index];
+          break;
+        }
+
+        case 'css':
+          el = document.querySelector(value);
+          break;
+
+        case 'xpath':
+          el = getElementByXPath(value);
+          break;
+
+        default:
+          throw new Error('Unsupported locator method: ' + method);
+      }
+    }
+
+    if (!el) {
+      throw new Error('Element not found: ' + str);
+    }
+
+    if (shouldWaitForVisible && !isVisible(el)) {
+      throw new Error('Element found but not visible: ' + str);
+    }
+
+    return el;
+  }
+
+  // Execute a single command (based on UI Vision command_runner.js run function)
+  async function executeCommand(cmd) {
+    const command = cmd.Command ? cmd.Command.toLowerCase() : '';
+    const target = cmd.Target || '';
+    const value = cmd.Value || '';
+    const targets = cmd.Targets || [];
+
+    console.log('MKP Executing:', command, target, value);
+
+    switch (command) {
+      case 'open': {
+        // Navigate to URL
+        if (target) {
+          window.location.href = target;
+        }
+        return { success: true };
+      }
+
+      case 'click':
+      case 'clickandwait': {
+        const el = findElementWithFallback(target, targets);
+        if (!el) {
+          throw new Error(`Element not found: ${target}`);
+        }
+
+        // Scroll element into view (like UI Vision)
+        try {
+          el.scrollIntoView({ block: 'center' });
+        } catch (e) {
+          console.log('MKP: scrollIntoView failed', e);
+        }
+
+        // Dispatch mouse events in sequence (from UI Vision command_runner.js lines 447-458)
+        ['mousedown', 'mouseup', 'click'].forEach(eventType => {
+          if (eventType === 'click' && typeof el.click === 'function') {
+            el.click();
+            return;
+          }
+
+          el.dispatchEvent(
+            new MouseEvent(eventType, {
+              view: window,
+              bubbles: true,
+              cancelable: true
+            })
+          );
+        });
+
+        focusIfEditable(el);
+        return { success: true };
+      }
+
+      case 'type': {
+        const el = findElementWithFallback(target, targets);
+        if (!el) {
+          throw new Error(`Element not found: ${target}`);
+        }
+
+        const tag = el.tagName.toLowerCase();
+        if (tag !== 'input' && tag !== 'textarea') {
+          throw new Error('Element is neither input nor textarea');
+        }
+
+        // Scroll and focus (like UI Vision)
+        try {
+          el.scrollIntoView({ block: 'center' });
+        } catch (e) {}
+
+        focusIfEditable(el);
+
+        // Set value and dispatch events (from UI Vision command_runner.js lines 573-584)
+        el.value = '';
+        el.value = value;
+        el.dispatchEvent(new Event('input', { target: el, bubbles: true }));
+        el.dispatchEvent(new Event('change', { target: el, bubbles: true }));
+
+        return { success: true };
+      }
+
+      case 'select':
+      case 'selectandwait': {
+        const el = findElementWithFallback(target, targets);
+        if (!el) {
+          throw new Error(`Element not found: ${target}`);
+        }
+
+        const options = Array.from(el.getElementsByTagName('option'));
+        const i = value.indexOf('=');
+        
+        // Parse select value format: label=xxx, value=xxx, index=xxx, id=xxx
+        let optionType = 'label';
+        let optionValue = value;
+        
+        if (i !== -1) {
+          optionType = value.substring(0, i).toLowerCase();
+          optionValue = value.substring(i + 1);
+        }
+
+        let option = null;
+        switch (optionType) {
+          case 'label':
+            option = options.find(op => globMatch(optionValue, domText(op).trim()));
+            break;
+          case 'index':
+            option = options[parseInt(optionValue)];
+            break;
+          case 'id':
+            option = options.find(op => op.id === optionValue);
+            break;
+          case 'value':
+            option = options.find(op => op.value === optionValue);
+            break;
+          default:
+            // Try matching by text directly (for simple "optionText" format)
+            option = options.find(op => domText(op).trim() === value || op.text === value);
+        }
+
+        if (!option) {
+          throw new Error(`Cannot find option: ${value}`);
+        }
+
+        // Scroll into view
+        try {
+          el.scrollIntoView({ block: 'center' });
+        } catch (e) {}
+
+        // Set selection and dispatch change (from UI Vision command_runner.js)
+        el.value = option.value;
+        el.dispatchEvent(new Event('change', { target: el, bubbles: true }));
+
+        return { success: true };
+      }
+
+      case 'check': {
+        const el = findElementWithFallback(target, targets);
+        if (!el) {
+          throw new Error(`Element not found: ${target}`);
+        }
+
+        el.checked = true;
+        el.dispatchEvent(new Event('change', { target: el, bubbles: true }));
+        return { success: true };
+      }
+
+      case 'uncheck': {
+        const el = findElementWithFallback(target, targets);
+        if (!el) {
+          throw new Error(`Element not found: ${target}`);
+        }
+
+        el.checked = false;
+        el.dispatchEvent(new Event('change', { target: el, bubbles: true }));
+        return { success: true };
+      }
+
+      case 'mouseover': {
+        const el = findElementWithFallback(target, targets);
+        if (!el) {
+          throw new Error(`Element not found: ${target}`);
+        }
+
+        try {
+          el.scrollIntoView({ block: 'center' });
+        } catch (e) {}
+
+        el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        return { success: true };
+      }
+
+      case 'sendkeys': {
+        const el = findElementWithFallback(target, targets);
+        if (!el) {
+          throw new Error(`Element not found: ${target}`);
+        }
+
+        focusIfEditable(el);
+        
+        // Send keys one by one
+        for (const char of value) {
+          el.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true }));
+        }
+
+        return { success: true };
+      }
+
+      case 'waitforvisible':
+      case 'waitforelementvisible': {
+        // Wait up to 10 seconds for element to be visible
+        const maxWait = 10000;
+        const interval = 200;
+        let waited = 0;
+
+        while (waited < maxWait) {
+          try {
+            const el = findElementWithFallback(target, targets, true);
+            if (el) return { success: true };
+          } catch (e) {}
+          
+          await new Promise(r => setTimeout(r, interval));
+          waited += interval;
+        }
+
+        throw new Error(`Timeout waiting for visible element: ${target}`);
+      }
+
+      case 'waitforelementpresent': {
+        // Wait up to 10 seconds for element to exist
+        const maxWait = 10000;
+        const interval = 200;
+        let waited = 0;
+
+        while (waited < maxWait) {
+          try {
+            const el = findElementWithFallback(target, targets, false);
+            if (el) return { success: true };
+          } catch (e) {}
+          
+          await new Promise(r => setTimeout(r, interval));
+          waited += interval;
+        }
+
+        throw new Error(`Timeout waiting for element: ${target}`);
+      }
+
+      case 'pause': {
+        // Pause for specified milliseconds
+        const ms = parseInt(target) || parseInt(value) || 1000;
+        await new Promise(r => setTimeout(r, ms));
+        return { success: true };
+      }
+
+      case 'refresh': {
+        window.location.reload();
+        return { success: true };
+      }
+
+      case 'verifytext': {
+        const el = findElementWithFallback(target, targets);
+        if (!el) {
+          throw new Error(`Element not found: ${target}`);
+        }
+
+        const text = domText(el);
+        if (!globMatch(value, text)) {
+          return {
+            success: false,
+            error: `Text not matched. Expected: "${value}", Actual: "${text}"`
+          };
+        }
+        return { success: true };
+      }
+
+      case 'asserttext': {
+        const el = findElementWithFallback(target, targets);
+        if (!el) {
+          throw new Error(`Element not found: ${target}`);
+        }
+
+        const text = domText(el);
+        if (!globMatch(value, text)) {
+          throw new Error(`Text not matched. Expected: "${value}", Actual: "${text}"`);
+        }
+        return { success: true };
+      }
+
+      case 'storetext': {
+        const el = findElementWithFallback(target, targets);
+        if (!el) {
+          throw new Error(`Element not found: ${target}`);
+        }
+
+        return {
+          success: true,
+          vars: { [value]: domText(el) }
+        };
+      }
+
+      case 'storetitle': {
+        return {
+          success: true,
+          vars: { [value]: document.title }
+        };
+      }
+
+      case 'editcontent': {
+        const el = findElementWithFallback(target, targets);
+        if (!el) {
+          throw new Error(`Element not found: ${target}`);
+        }
+
+        if (el.contentEditable !== 'true') {
+          throw new Error('Target is not contenteditable');
+        }
+
+        el.focus();
+        el.innerHTML = value;
+        el.blur();
+
+        return { success: true };
+      }
+
+      default:
+        throw new Error(`Unsupported command: ${command}`);
+    }
+  }
+
+  // Legacy findElement function for backward compatibility
+  async function findElement(target, targets) {
+    return findElementWithFallback(target, targets || []);
+  }
+
+  // Legacy findElementByLocator for backward compatibility  
+  function findElementByLocator(locator) {
+    try {
+      return getElementByLocator(locator, false);
+    } catch (e) {
+      console.error('Error finding element:', e);
+      return null;
+    }
   }
 
   console.log('MKP Auto Recorder content script loaded');
