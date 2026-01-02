@@ -277,7 +277,15 @@ function renderCommands() {
   if (commands.length === 0) {
     elements.commandsList.innerHTML = `
       <div class="empty-state">
-        <span class="empty-icon">📝</span>
+        <span class="empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <path d="M14 2v6h6"></path>
+            <path d="M16 13H8"></path>
+            <path d="M16 17H8"></path>
+            <path d="M10 9H8"></path>
+          </svg>
+        </span>
         <p>Aucune action enregistrée</p>
       </div>
     `;
@@ -302,13 +310,38 @@ function renderCommands() {
           <span class="command-type">${escapeHtml(cmd.Command)}</span>
           ${isDisabled ? '<span class="command-badge-disabled">IGNORÉ</span>' : ''}
           <div class="command-target" title="${escapeHtml(cmd.Target)}">${escapeHtml(targetShort)}</div>
-          ${timing ? `<div class="command-timing">⏱ ${timing}</div>` : ''}
-          ${cmd.Value ? `<div class="command-timing">📝 ${escapeHtml(cmd.Value.substring(0, 25))}</div>` : ''}
+          ${timing ? `<div class="command-timing"><span class="inline-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 3"></path></svg></span>${timing}</div>` : ''}
+          ${cmd.Value ? `<div class="command-timing"><span class="inline-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-4-4L4 16v4z"></path><path d="M13.5 6.5l4 4"></path></svg></span>${escapeHtml(cmd.Value.substring(0, 25))}</div>` : ''}
         </div>
         <div class="command-actions">
-          <button class="btn btn-xs btn-secondary btn-toggle" data-index="${index}" title="${disabledTitle}">${disabledIcon}</button>
-          <button class="btn btn-xs btn-secondary btn-edit" data-index="${index}" title="Modifier">✏️</button>
-          <button class="btn btn-xs btn-secondary btn-delete" data-index="${index}" title="Supprimer">🗑</button>
+          <button class="cmd-icon-btn btn-locate" data-index="${index}" title="Localiser l'élément" aria-label="Localiser">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="7"></circle>
+              <circle cx="12" cy="12" r="2"></circle>
+            </svg>
+          </button>
+          <button class="cmd-icon-btn btn-toggle" data-index="${index}" title="${disabledTitle}" aria-label="Activer/Désactiver">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+              ${isDisabled ? '<line x1="4" y1="4" x2="20" y2="20"></line>' : ''}
+            </svg>
+          </button>
+          <button class="cmd-icon-btn btn-edit" data-index="${index}" title="Modifier" aria-label="Modifier">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20h9"></path>
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+            </svg>
+          </button>
+          <button class="cmd-icon-btn btn-delete" data-index="${index}" title="Supprimer" aria-label="Supprimer">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+              <path d="M10 11v6"></path>
+              <path d="M14 11v6"></path>
+              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+            </svg>
+          </button>
         </div>
       </div>
     `;
@@ -317,6 +350,13 @@ function renderCommands() {
   elements.commandsList.innerHTML = html;
 
   // Event listeners
+  elements.commandsList.querySelectorAll('.btn-locate').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await locateCommand(parseInt(btn.dataset.index));
+    });
+  });
+
   elements.commandsList.querySelectorAll('.btn-toggle').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -339,6 +379,42 @@ function renderCommands() {
   });
 
   elements.commandsList.scrollTop = elements.commandsList.scrollHeight;
+}
+
+async function locateCommand(index) {
+  const cmd = state.currentScenario.Commands[index];
+  if (!cmd || !cmd.Target) {
+    showToast('Target manquant pour cette action', 'error');
+    return;
+  }
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab || !tab.id) {
+    showToast('Aucun onglet actif', 'error');
+    return;
+  }
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ['src/content_script.js']
+    });
+  } catch (e) {
+    // ignore
+  }
+
+  try {
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      type: 'HIGHLIGHT_TARGET',
+      target: cmd.Target,
+      targets: cmd.Targets || []
+    });
+
+    if (response && response.success) return;
+    showToast((response && response.error) ? response.error : 'Élément introuvable', 'error');
+  } catch (e) {
+    showToast(e && e.message ? e.message : 'Impossible de contacter la page', 'error');
+  }
 }
 
 function highlightCommand(index) {
@@ -461,7 +537,11 @@ function refreshScenariosList() {
   if (filtered.length === 0) {
     elements.scenariosList.innerHTML = `
       <div class="empty-state">
-        <span class="empty-icon">📁</span>
+        <span class="empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 7a2 2 0 0 1 2-2h5l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+          </svg>
+        </span>
         <p>Aucun scénario trouvé</p>
       </div>
     `;
@@ -480,15 +560,34 @@ function refreshScenariosList() {
           <span class="scenario-badge">${escapeHtml(groupName)}</span>
         </div>
         <div class="scenario-meta">
-          <span>📅 ${scenario.CreationDate}</span>
-          <span>📝 ${scenario.Commands.length} actions</span>
-          ${disabledCount > 0 ? `<span>🔇 ${disabledCount} ignorées</span>` : ''}
+          <span><span class="inline-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg></span>${scenario.CreationDate}</span>
+          <span><span class="inline-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></span>${scenario.Commands.length} actions</span>
+          ${disabledCount > 0 ? `<span><span class="inline-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle><line x1="4" y1="4" x2="20" y2="20"></line></svg></span>${disabledCount} ignorées</span>` : ''}
         </div>
         <div class="scenario-actions">
           <button class="btn btn-xs btn-primary btn-load" data-id="${scenario.id}">Charger</button>
-          <button class="btn btn-xs btn-secondary btn-edit-scenario" data-id="${scenario.id}">✏️</button>
-          <button class="btn btn-xs btn-secondary btn-export" data-id="${scenario.id}">📤</button>
-          <button class="btn btn-xs btn-secondary btn-delete-scenario" data-id="${scenario.id}">🗑</button>
+          <button class="cmd-icon-btn btn-edit-scenario" data-id="${scenario.id}" title="Modifier" aria-label="Modifier">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20h9"></path>
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+            </svg>
+          </button>
+          <button class="cmd-icon-btn btn-export" data-id="${scenario.id}" title="Exporter" aria-label="Exporter">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+          </button>
+          <button class="cmd-icon-btn btn-delete-scenario" data-id="${scenario.id}" title="Supprimer" aria-label="Supprimer">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+              <path d="M10 11v6"></path>
+              <path d="M14 11v6"></path>
+              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+            </svg>
+          </button>
         </div>
       </div>
     `;
@@ -653,7 +752,11 @@ function refreshGroupsList() {
   if (state.groups.length === 0) {
     elements.groupsList.innerHTML = `
       <div class="empty-state">
-        <span class="empty-icon">📂</span>
+        <span class="empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+          </svg>
+        </span>
         <p>Aucun groupe créé</p>
       </div>
     `;
@@ -667,15 +770,39 @@ function refreshGroupsList() {
       <div class="group-card" data-id="${group.id}">
         <div class="group-card-header">
           <span class="group-name">
-            <span class="group-name-icon">📁</span>
+            <span class="group-name-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 7a2 2 0 0 1 2-2h5l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+              </svg>
+            </span>
             ${escapeHtml(group.name)}
           </span>
           <span class="group-count">${scenarioCount} scénario(s)</span>
         </div>
         <div class="group-actions">
-          <button class="btn btn-xs btn-primary btn-play-group" data-id="${group.id}" ${scenarioCount === 0 ? 'disabled' : ''}>▶ Rejouer</button>
-          <button class="btn btn-xs btn-secondary btn-rename-group" data-id="${group.id}">✏️</button>
-          <button class="btn btn-xs btn-secondary btn-delete-group" data-id="${group.id}">🗑</button>
+          <button class="btn btn-xs btn-primary btn-play-group" data-id="${group.id}" ${scenarioCount === 0 ? 'disabled' : ''}>
+            <span class="btn-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="6 3 20 12 6 21 6 3"></polygon>
+              </svg>
+            </span>
+            Rejouer
+          </button>
+          <button class="cmd-icon-btn btn-rename-group" data-id="${group.id}" title="Renommer" aria-label="Renommer">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20h9"></path>
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+            </svg>
+          </button>
+          <button class="cmd-icon-btn btn-delete-group" data-id="${group.id}" title="Supprimer" aria-label="Supprimer">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+              <path d="M10 11v6"></path>
+              <path d="M14 11v6"></path>
+              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+            </svg>
+          </button>
         </div>
       </div>
     `;

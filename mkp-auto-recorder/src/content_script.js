@@ -355,6 +355,13 @@
         outline: 2px solid #6366f1 !important;
         outline-offset: 2px !important;
       }
+      .mkp-highlight-strong {
+        outline: 3px solid #10b981 !important;
+        outline-offset: 3px !important;
+        box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.25) !important;
+        border-radius: 4px !important;
+        transition: box-shadow 0.2s ease, outline 0.2s ease;
+      }
 
       /* Playback Overlay */
       #mkp-playback-overlay {
@@ -638,6 +645,34 @@
           sendResponse({ success: false, error: error.message });
         });
         return true;
+
+      case 'HIGHLIGHT_TARGET':
+        try {
+          const target = message.target;
+          const targets = message.targets;
+          const el = findElementWithFallback(target, targets, false);
+          if (!el) {
+            sendResponse({ success: false, error: 'Élément introuvable' });
+            break;
+          }
+
+          try {
+            if (typeof el.scrollIntoView === 'function') {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+            }
+          } catch (e) {}
+
+          highlightElement(el);
+          try {
+            el.classList.add('mkp-highlight-strong');
+            setTimeout(() => el.classList.remove('mkp-highlight-strong'), 1200);
+          } catch (e) {}
+
+          sendResponse({ success: true });
+        } catch (e) {
+          sendResponse({ success: false, error: e && e.message ? e.message : 'Erreur highlight' });
+        }
+        break;
     }
     return true;
   });
