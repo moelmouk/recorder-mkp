@@ -505,10 +505,12 @@ const ui = {
 
     console.log('Adding command to macro:', cmd);
 
+    // Stocker avec Targets comme UI Vision
     appState.currentMacro.commands.push({
       cmd: cmd.cmd,
       target: cmd.target || '',
-      value: cmd.value || ''
+      value: cmd.value || '',
+      targetOptions: cmd.targetOptions || [] // Garder pour compatibilité interne
     });
 
     storage.saveMacros(appState.macros);
