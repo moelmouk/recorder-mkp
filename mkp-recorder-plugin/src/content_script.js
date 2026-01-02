@@ -91,17 +91,19 @@
       return siblings.length > 1 ? `${tag}[${index}]` : tag;
     },
 
-    // XPath absolu (comme UI.Vision)
+    // XPath absolu (comme UI.Vision) - trouve le premier ancêtre avec ID valide
     xpath(dom) {
       if (!dom || dom.nodeType !== 1) return '';
       
       const parts = [];
       let current = dom;
+      let foundAnchorId = false;
       
       while (current && current.nodeType === 1) {
         const validId = this.getValidId(current);
         if (validId) {
           parts.unshift(`*[@id="${validId}"]`);
+          foundAnchorId = true;
           break;
         }
         if (current.tagName.toLowerCase() === 'body') {
@@ -117,9 +119,31 @@
         current = current.parentNode;
       }
       
-      // Toujours commencer par // pour les ID, / pour le chemin complet
-      const prefix = parts[0]?.startsWith('*[@id') ? '//' : '/';
+      // Si on a trouvé un ID, commencer par //
+      const prefix = foundAnchorId ? '//' : '/';
       return prefix + parts.join('/');
+    },
+
+    // XPath pour éléments dans un conteneur avec ID (style UI.Vision)
+    xpathFromAncestor(dom) {
+      if (!dom || dom.nodeType !== 1) return '';
+      
+      // Chercher un ancêtre avec un ID valide
+      let ancestor = dom.parentNode;
+      let path = [this.relativeXPath(dom)];
+      
+      while (ancestor && ancestor.nodeType === 1 && ancestor.tagName.toLowerCase() !== 'body') {
+        const ancestorId = this.getValidId(ancestor);
+        if (ancestorId) {
+          // Trouvé un ancêtre avec ID
+          return `//*[@id="${ancestorId}"]/${path.join('/')}`;
+        }
+        path.unshift(this.relativeXPath(ancestor));
+        ancestor = ancestor.parentNode;
+      }
+      
+      // Pas d'ancêtre avec ID, retourner chemin complet
+      return '/html/body/' + path.join('/');
     },
 
     // XPath court (alternative)
