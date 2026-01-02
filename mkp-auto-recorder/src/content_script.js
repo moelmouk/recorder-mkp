@@ -561,15 +561,41 @@
     }
 
     document.addEventListener('click', recordClick, true);
+    document.addEventListener('input', recordInput, true);
+    document.addEventListener('blur', recordBlur, true);
     document.addEventListener('change', recordChange, true);
 
     console.log('MKP Recording started');
   };
 
   const stopRecording = () => {
+    // Finalize any pending input
+    if (pendingInputElement && inputDebounceTimer) {
+      clearTimeout(inputDebounceTimer);
+      inputDebounceTimer = null;
+      
+      const value = pendingInputElement.value;
+      if (value) {
+        const locator = getLocator(pendingInputElement);
+        const lastCmd = recordedCommands[recordedCommands.length - 1];
+        if (!(lastCmd && lastCmd.Command === 'type' && lastCmd.Target === locator.Target)) {
+          recordCommand({
+            Command: 'type',
+            Target: locator.Target,
+            Value: value,
+            Targets: locator.Targets,
+            Description: ''
+          });
+        }
+      }
+      pendingInputElement = null;
+    }
+
     isRecording = false;
 
     document.removeEventListener('click', recordClick, true);
+    document.removeEventListener('input', recordInput, true);
+    document.removeEventListener('blur', recordBlur, true);
     document.removeEventListener('change', recordChange, true);
 
     console.log('MKP Recording stopped');
