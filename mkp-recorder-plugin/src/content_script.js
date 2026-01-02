@@ -99,8 +99,9 @@
       let current = dom;
       
       while (current && current.nodeType === 1) {
-        if (current.id) {
-          parts.unshift(`*[@id="${current.id}"]`);
+        const validId = this.getValidId(current);
+        if (validId) {
+          parts.unshift(`*[@id="${validId}"]`);
           break;
         }
         if (current.tagName.toLowerCase() === 'body') {
@@ -125,13 +126,14 @@
     xpathShort(dom) {
       if (!dom || dom.nodeType !== 1) return '';
       
-      // Si a un ID
-      if (dom.id) {
-        return `//*[@id="${dom.id}"]`;
+      // Si a un ID valide
+      const validId = this.getValidId(dom);
+      if (validId) {
+        return `//*[@id="${validId}"]`;
       }
       
-      // Si a un name
-      const name = dom.getAttribute('name');
+      // Si a un name valide
+      const name = this.getValidName(dom);
       if (name) {
         const tag = dom.tagName.toLowerCase();
         return `//${tag}[@name="${name}"]`;
