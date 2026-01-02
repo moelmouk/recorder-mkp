@@ -269,21 +269,65 @@
   // ========== RECORDING STATE ==========
   let isRecording = false;
   let recordedCommands = [];
+  let lastRecordedCommand = null;
+  let lastRecordTime = 0;
+  let pendingInputElement = null;
+  let inputDebounceTimer = null;
 
-  // ========== EVENT HANDLERS ==========
-  const recordClick = (e) => {
-    if (!isRecording) return;
+  // Minimum time between same commands (ms)
+  const DEBOUNCE_TIME = 300;
+  const INPUT_DEBOUNCE_TIME = 500;
 
-    const target = e.target;
-    const locator = getLocator(target);
+  // ========== HELPER FUNCTIONS ==========
+  
+  // Check if element is an input field (text, email, etc.)
+  const isTextInput = (el) => {
+    if (!el) return false;
+    const tagName = el.tagName.toLowerCase();
+    if (tagName === 'textarea') return true;
+    if (tagName === 'input') {
+      const type = (el.type || '').toLowerCase();
+      return ['text', 'email', 'password', 'search', 'tel', 'url', 'number'].includes(type);
+    }
+    return false;
+  };
 
-    const command = {
-      Command: 'click',
-      Target: locator.Target,
-      Value: '',
-      Targets: locator.Targets,
-      Description: ''
-    };
+  // Check if element is a clickable input (checkbox, radio)
+  const isClickableInput = (el) => {
+    if (!el) return false;
+    const tagName = el.tagName.toLowerCase();
+    if (tagName === 'input') {
+      const type = (el.type || '').toLowerCase();
+      return ['checkbox', 'radio'].includes(type);
+    }
+    return false;
+  };
+
+  // Check if this command is a duplicate of the last one
+  const isDuplicateCommand = (cmd) => {
+    if (!lastRecordedCommand) return false;
+    
+    const now = Date.now();
+    if (now - lastRecordTime < DEBOUNCE_TIME) {
+      // Same command, same target within debounce time
+      if (cmd.Command === lastRecordedCommand.Command && 
+          cmd.Target === lastRecordedCommand.Target) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Record a command with deduplication
+  const recordCommand = (command) => {
+    // Skip if duplicate
+    if (isDuplicateCommand(command)) {
+      console.log('MKP Skipped duplicate:', command.Command, command.Target);
+      return;
+    }
+
+    lastRecordedCommand = command;
+    lastRecordTime = Date.now();
 
     recordedCommands.push(command);
     chrome.runtime.sendMessage({
@@ -294,15 +338,96 @@
     console.log('MKP Recorded:', command);
   };
 
-  const recordChange = (e) => {
+  // ========== EVENT HANDLERS ==========
+  
+  // Handle clicks - only record meaningful clicks
+  const recordClick = (e) => {
     if (!isRecording) return;
 
     const target = e.target;
     const tagName = target.tagName.toLowerCase();
 
-    if (tagName === 'input' || tagName === 'textarea') {
-      const locator = getLocator(target);
-      const value = target.value;
+    // Skip click recording for text inputs - we'll record the 'type' command instead
+    if (isTextInput(target)) {
+      return;
+    }
+
+    // For labels, find the associated input
+    let actualTarget = target;
+    if (tagName === 'label') {
+      const forId = target.getAttribute('for');
+      if (forId) {
+        const input = document.getElementById(forId);
+        if (input && isTextInput(input)) {
+          return; // Skip click on label for text input
+        }
+      }
+      // Check if label contains an input
+      const containedInput = target.querySelector('input, textarea');
+      if (containedInput && isTextInput(containedInput)) {
+        return;
+      }
+    }
+
+    // Skip clicks on elements that are part of an input container
+    const closestInput = target.closest('input, textarea');
+    if (closestInput && isTextInput(closestInput)) {
+      return;
+    }
+
+    // For checkboxes and radios, let the 'change' event handle it
+    if (isClickableInput(target)) {
+      return;
+    }
+
+    // Check parent for checkbox/radio (sometimes click is on span/label)
+    const parentLabel = target.closest('label');
+    if (parentLabel) {
+      const forId = parentLabel.getAttribute('for');
+      if (forId) {
+        const input = document.getElementById(forId);
+        if (input && isClickableInput(input)) {
+          return; // Let change event handle it
+        }
+      }
+    }
+
+    const locator = getLocator(actualTarget);
+
+    const command = {
+      Command: 'click',
+      Target: locator.Target,
+      Value: '',
+      Targets: locator.Targets,
+      Description: ''
+    };
+
+    recordCommand(command);
+  };
+
+  // Handle input changes (text fields) - debounced
+  const recordInput = (e) => {
+    if (!isRecording) return;
+
+    const target = e.target;
+    
+    if (!isTextInput(target)) return;
+
+    // Clear previous timer
+    if (inputDebounceTimer) {
+      clearTimeout(inputDebounceTimer);
+    }
+
+    pendingInputElement = target;
+
+    // Debounce: wait for user to stop typing
+    inputDebounceTimer = setTimeout(() => {
+      if (!isRecording || !pendingInputElement) return;
+      
+      const value = pendingInputElement.value;
+      if (!value && value !== '') return; // Skip empty
+
+      const locator = getLocator(pendingInputElement);
 
       const command = {
         Command: 'type',
@@ -312,17 +437,72 @@
         Description: ''
       };
 
-      recordedCommands.push(command);
-      chrome.runtime.sendMessage({
-        type: 'COMMAND_RECORDED',
-        command: command
-      });
+      // Check if we already have a type command for this element
+      // and update it instead of adding a new one
+      const lastCmd = recordedCommands[recordedCommands.length - 1];
+      if (lastCmd && lastCmd.Command === 'type' && lastCmd.Target === locator.Target) {
+        // Update the last command's value
+        lastCmd.Value = value;
+        console.log('MKP Updated last type command:', locator.Target, value);
+      } else {
+        recordCommand(command);
+      }
 
-      console.log('MKP Recorded:', command);
-    } else if (tagName === 'select') {
+      pendingInputElement = null;
+    }, INPUT_DEBOUNCE_TIME);
+  };
+
+  // Handle blur on input fields - finalize any pending input
+  const recordBlur = (e) => {
+    if (!isRecording) return;
+
+    const target = e.target;
+    
+    if (!isTextInput(target)) return;
+
+    // If there's a pending input and it's this element, record it now
+    if (pendingInputElement === target && inputDebounceTimer) {
+      clearTimeout(inputDebounceTimer);
+      inputDebounceTimer = null;
+
+      const value = target.value;
+      if (value || value === '') {
+        const locator = getLocator(target);
+
+        const command = {
+          Command: 'type',
+          Target: locator.Target,
+          Value: value,
+          Targets: locator.Targets,
+          Description: ''
+        };
+
+        // Check if we already have a type command for this element
+        const lastCmd = recordedCommands[recordedCommands.length - 1];
+        if (lastCmd && lastCmd.Command === 'type' && lastCmd.Target === locator.Target) {
+          lastCmd.Value = value;
+          console.log('MKP Updated on blur:', locator.Target, value);
+        } else if (value) { // Only record if there's a value
+          recordCommand(command);
+        }
+      }
+
+      pendingInputElement = null;
+    }
+  };
+
+  // Handle change events (checkboxes, radios, selects)
+  const recordChange = (e) => {
+    if (!isRecording) return;
+
+    const target = e.target;
+    const tagName = target.tagName.toLowerCase();
+
+    // Handle select dropdowns
+    if (tagName === 'select') {
       const locator = getLocator(target);
       const selectedOption = target.options[target.selectedIndex];
-      const value = selectedOption ? selectedOption.text : '';
+      const value = selectedOption ? `label=${selectedOption.text}` : '';
 
       const command = {
         Command: 'select',
@@ -332,34 +512,39 @@
         Description: ''
       };
 
-      recordedCommands.push(command);
-      chrome.runtime.sendMessage({
-        type: 'COMMAND_RECORDED',
-        command: command
-      });
+      recordCommand(command);
+      return;
     }
-  };
 
-  const recordCheck = (e) => {
-    if (!isRecording) return;
+    // Handle checkboxes and radios
+    if (tagName === 'input') {
+      const type = (target.type || '').toLowerCase();
+      
+      if (type === 'checkbox') {
+        const locator = getLocator(target);
+        const command = {
+          Command: target.checked ? 'check' : 'uncheck',
+          Target: locator.Target,
+          Value: '',
+          Targets: locator.Targets,
+          Description: ''
+        };
+        recordCommand(command);
+        return;
+      }
 
-    const target = e.target;
-    if (target.type === 'checkbox' || target.type === 'radio') {
-      const locator = getLocator(target);
-
-      const command = {
-        Command: target.checked ? 'check' : 'uncheck',
-        Target: locator.Target,
-        Value: '',
-        Targets: locator.Targets,
-        Description: ''
-      };
-
-      recordedCommands.push(command);
-      chrome.runtime.sendMessage({
-        type: 'COMMAND_RECORDED',
-        command: command
-      });
+      if (type === 'radio') {
+        const locator = getLocator(target);
+        const command = {
+          Command: 'click',
+          Target: locator.Target,
+          Value: '',
+          Targets: locator.Targets,
+          Description: ''
+        };
+        recordCommand(command);
+        return;
+      }
     }
   };
 
@@ -367,6 +552,13 @@
   const startRecording = () => {
     isRecording = true;
     recordedCommands = [];
+    lastRecordedCommand = null;
+    lastRecordTime = 0;
+    pendingInputElement = null;
+    if (inputDebounceTimer) {
+      clearTimeout(inputDebounceTimer);
+      inputDebounceTimer = null;
+    }
 
     document.addEventListener('click', recordClick, true);
     document.addEventListener('change', recordChange, true);
