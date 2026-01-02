@@ -37,16 +37,16 @@ const storage = {
   },
 
   async exportMacro(macro) {
-    // Format compatible UI Vision
+    // Format UI Vision natif
     const uiVisionFormat = {
       Name: macro.name,
       CreationDate: new Date(macro.createdAt).toISOString().split('T')[0],
       Commands: macro.commands.map(cmd => ({
-        Command: cmd.cmd,
-        Target: cmd.target || '',
-        Value: cmd.value || '',
-        Targets: cmd.targetOptions || [],
-        Description: ''
+        Command: cmd.Command || cmd.cmd || '',
+        Target: cmd.Target || cmd.target || '',
+        Value: cmd.Value || cmd.value || '',
+        Targets: cmd.Targets || cmd.targetOptions || cmd.targets || [],
+        Description: cmd.Description || ''
       }))
     };
     
@@ -57,6 +57,8 @@ const storage = {
     a.download = `${macro.name}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    
+    this.log(`✅ Macro exportée: ${macro.name}.json`, 'success');
   },
 
   async exportAllMacros(macros) {
