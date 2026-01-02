@@ -418,13 +418,15 @@
       
       console.log('MKP Recording:', cmdObj);
       
+      // Format UI Vision dès la capture
       chrome.runtime.sendMessage({
         type: 'CS_RECORD_COMMAND',
         data: {
-          cmd: cmdObj.cmd,
-          target: cmdObj.target || '',
-          value: cmdObj.value || '',
-          targetOptions: cmdObj.targetOptions || []
+          Command: cmdObj.cmd,
+          Target: cmdObj.target || '',
+          Value: cmdObj.value || '',
+          Targets: cmdObj.targetOptions || [],
+          Description: ''
         }
       }).catch(e => console.log('Failed to send:', e.message));
     },
