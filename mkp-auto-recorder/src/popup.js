@@ -216,6 +216,7 @@ function pollPlaybackState() {
     } else if (st.status === 'completed') {
       clearInterval(interval);
       showStatus('success', 'Lecture terminée');
+      showToast(`Scénario "${(elements.scenarioName && elements.scenarioName.value) ? elements.scenarioName.value : 'Nouveau scénario'}" terminé sans erreur`, 'success');
       elements.btnPlay.disabled = false;
       elements.btnStart.disabled = false;
       clearCommandHighlight();
@@ -830,6 +831,7 @@ function pollGroupPlayback(total) {
     } else if (st.status === 'completed') {
       clearInterval(interval);
       showStatus('success', 'Groupe terminé');
+      showToast('Lecture du groupe terminée sans erreur', 'success');
     } else if (st.status === 'error' || st.status === 'stopped') {
       clearInterval(interval);
       showStatus('error', st.error || 'Arrêté');
@@ -855,6 +857,47 @@ function updateUIState() {
 function showStatus(type, text) {
   elements.statusBar.className = 'status-bar ' + type;
   elements.statusBar.querySelector('.status-text').textContent = text;
+}
+
+function showToast(message, type = 'success') {
+  if (!message) return;
+
+  const existing = document.getElementById('mkp-toast-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'mkp-toast-overlay';
+
+  const statusText = type === 'error' ? 'Erreur' : 'Succès';
+
+  overlay.innerHTML = `
+    <div class="mkp-playback-inner mkp-toast-inner">
+      <div class="mkp-playback-header">
+        <div class="mkp-playback-status">
+          <div class="mkp-play-pulse mkp-toast-pulse ${type}"></div>
+          <span>${statusText}</span>
+        </div>
+        <button class="mkp-btn mkp-btn-retry" id="mkp-toast-close">OK</button>
+      </div>
+      <div class="mkp-playback-info">
+        <div class="mkp-step-label">Message</div>
+        <div class="mkp-step-target" id="mkp-toast-message"></div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const msgEl = document.getElementById('mkp-toast-message');
+  if (msgEl) msgEl.textContent = message;
+
+  const btn = document.getElementById('mkp-toast-close');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      const el = document.getElementById('mkp-toast-overlay');
+      if (el) el.remove();
+    });
+  }
 }
 
 function escapeHtml(str) {
