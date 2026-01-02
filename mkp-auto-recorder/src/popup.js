@@ -1,6 +1,6 @@
 /**
- * MKP Auto Recorder - Popup Script v2.0
- * With scenarios management, groups, and real timing
+ * MKP Auto Recorder - Popup Script v2.1
+ * With scenario/group reassignment, playback overlay, and command disable
  */
 
 // ==================== DOM ELEMENTS ====================
@@ -35,7 +35,7 @@ const elements = {
   btnAddGroup: document.getElementById('btnAddGroup'),
   groupsList: document.getElementById('groupsList'),
   
-  // Modals
+  // Edit Command Modal
   editModal: document.getElementById('editModal'),
   modalTitle: document.getElementById('modalTitle'),
   modalBody: document.getElementById('modalBody'),
@@ -43,6 +43,15 @@ const elements = {
   modalCancel: document.getElementById('modalCancel'),
   modalSave: document.getElementById('modalSave'),
   
+  // Edit Scenario Modal
+  editScenarioModal: document.getElementById('editScenarioModal'),
+  editScenarioName: document.getElementById('editScenarioName'),
+  editScenarioGroup: document.getElementById('editScenarioGroup'),
+  editScenarioClose: document.getElementById('editScenarioClose'),
+  editScenarioCancel: document.getElementById('editScenarioCancel'),
+  editScenarioSave: document.getElementById('editScenarioSave'),
+  
+  // Group Play Modal
   groupPlayModal: document.getElementById('groupPlayModal'),
   groupScenariosList: document.getElementById('groupScenariosList'),
   useRealTiming: document.getElementById('useRealTiming'),
@@ -89,7 +98,6 @@ elements.tabBtns.forEach(btn => {
     btn.classList.add('active');
     document.getElementById(`tab-${tabId}`).classList.add('active');
     
-    // Refresh content
     if (tabId === 'scenarios') refreshScenariosList();
     if (tabId === 'groups') refreshGroupsList();
   });
@@ -101,7 +109,6 @@ async function loadData() {
   const result = await chrome.storage.local.get(['mkpScenarios', 'mkpGroups']);
   state.scenarios = result.mkpScenarios || [];
   state.groups = result.mkpGroups || [];
-  
   updateGroupSelects();
 }
 
@@ -121,7 +128,6 @@ elements.btnStart.addEventListener('click', async () => {
     return;
   }
 
-  // Clear and setup new scenario
   state.currentScenario = createEmptyScenario();
   state.currentScenario.Name = elements.scenarioName.value || 'Nouveau scénario';
   state.currentScenario.groupId = elements.scenarioGroup.value;
@@ -153,9 +159,15 @@ elements.btnPlay.addEventListener('click', async () => {
     return;
   }
 
+  // Filter out disabled commands
+  const scenarioToPlay = {
+    ...state.currentScenario,
+    Commands: state.currentScenario.Commands.filter(cmd => !cmd.disabled)
+  };
+
   await chrome.runtime.sendMessage({
     type: 'SET_SCENARIO',
-    scenario: state.currentScenario
+    scenario: scenarioToPlay
   });
 
   showStatus('playing', 'Lecture en cours...');
@@ -191,6 +203,9 @@ function pollPlaybackState() {
       elements.btnPlay.disabled = false;
       elements.btnStart.disabled = false;
       clearCommandHighlight();
+    } else if (st.status === 'skipped') {
+      // Continue polling - command was skipped
+      showStatus('playing', `Étape ignorée, continuation...`);
     }
   }, 200);
 }
@@ -207,7 +222,6 @@ elements.btnSave.addEventListener('click', async () => {
   state.currentScenario.groupId = elements.scenarioGroup.value;
   state.currentScenario.CreationDate = new Date().toISOString().split('T')[0];
 
-  // Check if updating existing
   const existingIndex = state.scenarios.findIndex(s => s.id === state.currentScenario.id);
   if (existingIndex >= 0) {
     state.scenarios[existingIndex] = { ...state.currentScenario };
@@ -252,18 +266,24 @@ function renderCommands() {
 
   const html = commands.map((cmd, index) => {
     const timing = cmd.timing ? `${(cmd.timing / 1000).toFixed(1)}s` : '';
-    const targetShort = (cmd.Target || '').substring(0, 50);
+    const targetShort = (cmd.Target || '').substring(0, 45);
+    const isDisabled = cmd.disabled;
+    const disabledClass = isDisabled ? 'command-disabled' : '';
+    const disabledIcon = isDisabled ? '🔇' : '🔊';
+    const disabledTitle = isDisabled ? 'Activer' : 'Désactiver';
     
     return `
-      <div class="command-item" data-index="${index}">
+      <div class="command-item ${disabledClass}" data-index="${index}">
         <span class="command-number">${index + 1}</span>
         <div class="command-info">
           <span class="command-type">${escapeHtml(cmd.Command)}</span>
+          ${isDisabled ? '<span class="command-badge-disabled">IGNORÉ</span>' : ''}
           <div class="command-target" title="${escapeHtml(cmd.Target)}">${escapeHtml(targetShort)}</div>
           ${timing ? `<div class="command-timing">⏱ ${timing}</div>` : ''}
-          ${cmd.Value ? `<div class="command-timing">📝 ${escapeHtml(cmd.Value.substring(0, 30))}</div>` : ''}
+          ${cmd.Value ? `<div class="command-timing">📝 ${escapeHtml(cmd.Value.substring(0, 25))}</div>` : ''}
         </div>
         <div class="command-actions">
+          <button class="btn btn-xs btn-secondary btn-toggle" data-index="${index}" title="${disabledTitle}">${disabledIcon}</button>
           <button class="btn btn-xs btn-secondary btn-edit" data-index="${index}" title="Modifier">✏️</button>
           <button class="btn btn-xs btn-secondary btn-delete" data-index="${index}" title="Supprimer">🗑</button>
         </div>
@@ -273,7 +293,14 @@ function renderCommands() {
 
   elements.commandsList.innerHTML = html;
 
-  // Add event listeners
+  // Event listeners
+  elements.commandsList.querySelectorAll('.btn-toggle').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleCommand(parseInt(btn.dataset.index));
+    });
+  });
+
   elements.commandsList.querySelectorAll('.btn-edit').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -288,7 +315,6 @@ function renderCommands() {
     });
   });
 
-  // Scroll to bottom
   elements.commandsList.scrollTop = elements.commandsList.scrollHeight;
 }
 
@@ -302,6 +328,17 @@ function clearCommandHighlight() {
   elements.commandsList.querySelectorAll('.command-item').forEach(item => {
     item.classList.remove('active');
   });
+}
+
+// ==================== TOGGLE COMMAND (DISABLE/ENABLE) ====================
+
+function toggleCommand(index) {
+  const cmd = state.currentScenario.Commands[index];
+  if (!cmd) return;
+  
+  cmd.disabled = !cmd.disabled;
+  renderCommands();
+  syncToBackground();
 }
 
 // ==================== EDIT COMMAND ====================
@@ -339,6 +376,12 @@ function editCommand(index) {
       <label>Délai avant (ms)</label>
       <input type="number" id="editTiming" value="${cmd.timing || 0}" min="0" step="100">
     </div>
+    <div class="form-group">
+      <label>
+        <input type="checkbox" id="editDisabled" ${cmd.disabled ? 'checked' : ''}>
+        Désactiver cette action (ignorée lors de la lecture)
+      </label>
+    </div>
   `;
 
   elements.editModal.classList.add('active');
@@ -363,6 +406,7 @@ elements.modalSave.addEventListener('click', () => {
     cmd.Target = document.getElementById('editTarget').value;
     cmd.Value = document.getElementById('editValue').value;
     cmd.timing = parseInt(document.getElementById('editTiming').value) || 0;
+    cmd.disabled = document.getElementById('editDisabled').checked;
     
     renderCommands();
     syncToBackground();
@@ -404,6 +448,7 @@ function refreshScenariosList() {
   const html = filtered.map(scenario => {
     const group = state.groups.find(g => g.id === scenario.groupId);
     const groupName = group ? group.name : 'Sans groupe';
+    const disabledCount = scenario.Commands.filter(c => c.disabled).length;
     
     return `
       <div class="scenario-card" data-id="${scenario.id}">
@@ -414,10 +459,12 @@ function refreshScenariosList() {
         <div class="scenario-meta">
           <span>📅 ${scenario.CreationDate}</span>
           <span>📝 ${scenario.Commands.length} actions</span>
+          ${disabledCount > 0 ? `<span>🔇 ${disabledCount} ignorées</span>` : ''}
         </div>
         <div class="scenario-actions">
           <button class="btn btn-xs btn-primary btn-load" data-id="${scenario.id}">Charger</button>
-          <button class="btn btn-xs btn-secondary btn-export" data-id="${scenario.id}">Exporter</button>
+          <button class="btn btn-xs btn-secondary btn-edit-scenario" data-id="${scenario.id}">✏️</button>
+          <button class="btn btn-xs btn-secondary btn-export" data-id="${scenario.id}">📤</button>
           <button class="btn btn-xs btn-secondary btn-delete-scenario" data-id="${scenario.id}">🗑</button>
         </div>
       </div>
@@ -429,6 +476,10 @@ function refreshScenariosList() {
   // Event listeners
   elements.scenariosList.querySelectorAll('.btn-load').forEach(btn => {
     btn.addEventListener('click', () => loadScenario(btn.dataset.id));
+  });
+
+  elements.scenariosList.querySelectorAll('.btn-edit-scenario').forEach(btn => {
+    btn.addEventListener('click', () => openEditScenarioModal(btn.dataset.id));
   });
 
   elements.scenariosList.querySelectorAll('.btn-export').forEach(btn => {
@@ -451,7 +502,6 @@ function loadScenario(id) {
   renderCommands();
   syncToBackground();
   
-  // Switch to recorder tab
   document.querySelector('[data-tab="recorder"]').click();
   showStatus('success', 'Scénario chargé');
 }
@@ -479,6 +529,46 @@ async function deleteScenario(id) {
   refreshScenariosList();
 }
 
+// ==================== EDIT SCENARIO (REASSIGN GROUP) ====================
+
+function openEditScenarioModal(id) {
+  const scenario = state.scenarios.find(s => s.id === id);
+  if (!scenario) return;
+
+  state.editingScenarioId = id;
+  elements.editScenarioName.value = scenario.Name;
+  
+  // Update group select options
+  const options = '<option value="">Sans groupe</option>' + 
+    state.groups.map(g => `<option value="${g.id}" ${scenario.groupId === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('');
+  elements.editScenarioGroup.innerHTML = options;
+  
+  elements.editScenarioModal.classList.add('active');
+}
+
+elements.editScenarioClose.addEventListener('click', closeEditScenarioModal);
+elements.editScenarioCancel.addEventListener('click', closeEditScenarioModal);
+
+function closeEditScenarioModal() {
+  elements.editScenarioModal.classList.remove('active');
+  state.editingScenarioId = null;
+}
+
+elements.editScenarioSave.addEventListener('click', async () => {
+  if (!state.editingScenarioId) return;
+
+  const scenario = state.scenarios.find(s => s.id === state.editingScenarioId);
+  if (!scenario) return;
+
+  scenario.Name = elements.editScenarioName.value || 'Scénario';
+  scenario.groupId = elements.editScenarioGroup.value;
+
+  await saveData();
+  refreshScenariosList();
+  closeEditScenarioModal();
+  showStatus('success', 'Scénario modifié');
+});
+
 // Search and filter events
 elements.searchScenarios.addEventListener('input', refreshScenariosList);
 elements.filterGroup.addEventListener('change', refreshScenariosList);
@@ -497,13 +587,11 @@ elements.fileImport.addEventListener('change', async (e) => {
     const text = await file.text();
     const imported = JSON.parse(text);
 
-    // Handle single scenario or array
     const scenarios = Array.isArray(imported) ? imported : [imported];
     
     for (const scenario of scenarios) {
       if (!scenario.Commands || !Array.isArray(scenario.Commands)) continue;
       
-      // Assign new ID
       scenario.id = generateId();
       scenario.groupId = scenario.groupId || '';
       state.scenarios.push(scenario);
@@ -572,7 +660,6 @@ function refreshGroupsList() {
 
   elements.groupsList.innerHTML = html;
 
-  // Event listeners
   elements.groupsList.querySelectorAll('.btn-play-group').forEach(btn => {
     btn.addEventListener('click', () => openGroupPlayModal(btn.dataset.id));
   });
@@ -622,7 +709,6 @@ async function deleteGroup(id) {
     
   if (!confirm(msg)) return;
 
-  // Remove group reference from scenarios
   state.scenarios.forEach(s => {
     if (s.groupId === id) s.groupId = '';
   });
@@ -650,12 +736,15 @@ function openGroupPlayModal(groupId) {
   
   if (groupScenarios.length === 0) return;
 
-  elements.groupScenariosList.innerHTML = groupScenarios.map(s => `
-    <div class="scenario-check-item">
-      <input type="checkbox" id="check-${s.id}" data-id="${s.id}" checked>
-      <label for="check-${s.id}">${escapeHtml(s.Name)} (${s.Commands.length} actions)</label>
-    </div>
-  `).join('');
+  elements.groupScenariosList.innerHTML = groupScenarios.map(s => {
+    const activeCount = s.Commands.filter(c => !c.disabled).length;
+    return `
+      <div class="scenario-check-item">
+        <input type="checkbox" id="check-${s.id}" data-id="${s.id}" checked>
+        <label for="check-${s.id}">${escapeHtml(s.Name)} (${activeCount} actions actives)</label>
+      </div>
+    `;
+  }).join('');
 
   elements.groupPlayModal.classList.add('active');
 }
@@ -680,8 +769,15 @@ elements.groupPlayStart.addEventListener('click', async () => {
   const useRealTiming = elements.useRealTiming.checked;
   closeGroupPlayModal();
 
-  // Get scenarios in order
-  const scenariosToPlay = checkedIds.map(id => state.scenarios.find(s => s.id === id)).filter(Boolean);
+  // Get scenarios and filter disabled commands
+  const scenariosToPlay = checkedIds.map(id => {
+    const s = state.scenarios.find(sc => sc.id === id);
+    if (!s) return null;
+    return {
+      ...s,
+      Commands: s.Commands.filter(c => !c.disabled)
+    };
+  }).filter(Boolean);
   
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !tab.id) {
@@ -689,7 +785,6 @@ elements.groupPlayStart.addEventListener('click', async () => {
     return;
   }
 
-  // Play scenarios sequentially
   showStatus('playing', `Lecture groupe: 0/${scenariosToPlay.length}`);
   
   await chrome.runtime.sendMessage({
@@ -750,7 +845,6 @@ function escapeHtml(str) {
 async function loadCurrentScenario() {
   const response = await chrome.runtime.sendMessage({ type: 'GET_SCENARIO' });
   if (response && response.scenario) {
-    // Merge with existing metadata
     state.currentScenario.Commands = response.scenario.Commands;
     renderCommands();
   }

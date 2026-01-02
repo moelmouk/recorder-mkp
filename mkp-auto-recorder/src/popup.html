@@ -145,7 +145,7 @@
       </section>
     </main>
 
-    <!-- Edit Modal -->
+    <!-- Edit Command Modal -->
     <div class="modal" id="editModal">
       <div class="modal-content">
         <div class="modal-header">
@@ -158,6 +158,32 @@
         <div class="modal-footer">
           <button class="btn btn-secondary" id="modalCancel">Annuler</button>
           <button class="btn btn-primary" id="modalSave">Enregistrer</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Scenario Modal -->
+    <div class="modal" id="editScenarioModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Modifier le scénario</h3>
+          <button class="modal-close" id="editScenarioClose">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Nom du scénario</label>
+            <input type="text" id="editScenarioName" placeholder="Nom">
+          </div>
+          <div class="form-group">
+            <label>Groupe</label>
+            <select id="editScenarioGroup">
+              <option value="">Sans groupe</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="editScenarioCancel">Annuler</button>
+          <button class="btn btn-primary" id="editScenarioSave">Enregistrer</button>
         </div>
       </div>
     </div>
