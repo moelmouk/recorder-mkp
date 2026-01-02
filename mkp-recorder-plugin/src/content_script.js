@@ -257,12 +257,13 @@
       if (!$dom || $dom.nodeType !== 1) return { target: '', targetOptions: [] };
       
       const candidates = [];
-      const id = this.getValidId($dom);
+      const id = this.getValidId($dom);           // ID stable
+      const anyId = this.getAnyValidId($dom);     // N'importe quel ID valide (même dynamique)
       const name = this.getValidName($dom);
       const tag = $dom.tagName.toLowerCase();
       const isLink = tag === 'a';
       
-      // Texte du lien
+      // Texte du lien (très stable)
       if (isLink) {
         const linkText = this.domText($dom);
         if (linkText && linkText.length > 0 && linkText.length < 50) {
@@ -270,51 +271,57 @@
         }
       }
 
-      // ID valide (préféré)
+      // ID stable (préféré)
       if (id) {
         candidates.push(`id=${id}`);
+        candidates.push(`xpath=//*[@id="${id}"]`);
       }
 
-      // Name valide
+      // Name (stable)
       if (name) {
         candidates.push(`name=${name}`);
+        candidates.push(`xpath=//${tag}[@name="${name}"]`);
       }
 
-      // XPath avec ID direct (si disponible et valide)
-      if (id) {
-        candidates.push(`xpath=//*[@id="${id}"]`);
-        candidates.push(`xpath=//${tag}[@id='${id}']`);
-      }
-
-      // XPath depuis ancêtre avec ID (style UI.Vision)
+      // XPath depuis ancêtre avec ID stable (style UI.Vision) - PRIORITAIRE
       try {
         const xpAncestor = this.xpathFromAncestor($dom);
-        if (xpAncestor && !candidates.includes('xpath=' + xpAncestor)) {
+        if (xpAncestor) {
           candidates.push('xpath=' + xpAncestor);
         }
       } catch (e) {}
 
-      // XPath complet
+      // XPath complet sans ID (fallback stable)
       try {
-        const xp = this.xpath($dom);
-        if (xp && !candidates.includes('xpath=' + xp)) {
-          candidates.push('xpath=' + xp);
+        const xpFull = this.xpathFull($dom);
+        if (xpFull && !candidates.some(c => c === 'xpath=' + xpFull)) {
+          candidates.push('xpath=' + xpFull);
         }
       } catch (e) {}
 
-      // XPath court
-      try {
-        const xpShort = this.xpathShort($dom);
-        if (xpShort && !candidates.some(c => c === 'xpath=' + xpShort)) {
-          candidates.push('xpath=' + xpShort);
-        }
-      } catch (e) {}
-
-      // CSS
+      // CSS (peut être instable avec les IDs dynamiques)
       try {
         const css = this.cssSelector($dom);
-        if (css) candidates.push('css=' + css);
+        if (css && !css.includes('\\')) { // Éviter les CSS avec échappement complexe
+          candidates.push('css=' + css);
+        }
       } catch (e) {}
+
+      // ID dynamique en dernier recours (peut ne pas fonctionner au replay)
+      if (!id && anyId) {
+        candidates.push(`id=${anyId}`);
+        candidates.push(`xpath=//*[@id="${anyId}"]`);
+      }
+
+      // Si toujours rien, XPath court
+      if (candidates.length === 0) {
+        try {
+          const xpShort = this.xpathShort($dom);
+          if (xpShort) {
+            candidates.push('xpath=' + xpShort);
+          }
+        } catch (e) {}
+      }
 
       return {
         target: candidates[0] || '',
