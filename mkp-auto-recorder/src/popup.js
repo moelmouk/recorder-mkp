@@ -1,5 +1,6 @@
 /**
  * MKP Auto Recorder - Popup Script
+ * With persistent recording state
  */
 
 const btnStart = document.getElementById('btnStart');
@@ -20,13 +21,39 @@ let currentScenario = {
   Commands: []
 };
 
-// Load scenario from background
+// Load scenario and state from background
 async function loadScenario() {
   const response = await chrome.runtime.sendMessage({ type: 'GET_SCENARIO' });
   if (response && response.scenario) {
     currentScenario = response.scenario;
     scenarioNameInput.value = currentScenario.Name;
     renderCommands();
+    btnPlay.disabled = currentScenario.Commands.length === 0;
+  }
+}
+
+// Load recording state from background
+async function loadRecordingState() {
+  const response = await chrome.runtime.sendMessage({ type: 'GET_RECORDING_STATE' });
+  if (response) {
+    isRecording = response.isRecording;
+    updateUIState();
+  }
+}
+
+// Update UI based on recording state
+function updateUIState() {
+  if (isRecording) {
+    btnStart.disabled = true;
+    btnStop.disabled = false;
+    btnPlay.disabled = true;
+    statusDiv.className = 'status recording';
+    statusDiv.innerHTML = '<span class="recording-dot"></span> Enregistrement en cours...';
+  } else {
+    btnStart.disabled = false;
+    btnStop.disabled = true;
+    statusDiv.className = 'status stopped';
+    statusDiv.textContent = '⏸️ Prêt à enregistrer';
     btnPlay.disabled = currentScenario.Commands.length === 0;
   }
 }
@@ -47,17 +74,36 @@ function renderCommands() {
   const html = currentScenario.Commands.map((cmd, index) => `
     <div class="command-item">
       <div class="cmd">${index + 1}. ${cmd.Command}</div>
-      <div class="target" title="${cmd.Target}">${cmd.Target}</div>
+      <div class="target" title="${escapeHtml(cmd.Target)}">${escapeHtml(cmd.Target)}</div>
+      ${cmd.Value ? `<div class="value">Valeur: ${escapeHtml(cmd.Value)}</div>` : ''}
     </div>
   `).join('');
 
   commandsDiv.innerHTML = html;
   btnPlay.disabled = false;
+  
+  // Scroll to bottom to show latest command
+  commandsDiv.scrollTop = commandsDiv.scrollHeight;
+}
+
+// Escape HTML for safe display
+function escapeHtml(str) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 // Start recording
 btnStart.addEventListener('click', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  if (!tab || !tab.id) {
+    alert('❌ Impossible de démarrer l\'enregistrement sur cet onglet');
+    return;
+  }
 
   // Clear previous scenario
   await chrome.runtime.sendMessage({ type: 'CLEAR_SCENARIO' });
@@ -65,15 +111,12 @@ btnStart.addEventListener('click', async () => {
   currentScenario.Name = scenarioNameInput.value;
   currentScenario.CreationDate = new Date().toISOString().split('T')[0];
 
-  // Start recording
-  await chrome.tabs.sendMessage(tab.id, { type: 'START_RECORDING' });
+  // Start recording via background (which handles state persistence)
+  await chrome.runtime.sendMessage({ type: 'START_RECORDING', tabId: tab.id });
 
   isRecording = true;
-  btnStart.disabled = true;
-  btnStop.disabled = false;
-  btnPlay.disabled = true;
-  statusDiv.className = 'status recording';
-  statusDiv.textContent = '🔴 Enregistrement en cours...';
+  updateUIState();
+  renderCommands();
 
   // Poll for new commands
   startPolling();
@@ -83,13 +126,11 @@ btnStart.addEventListener('click', async () => {
 btnStop.addEventListener('click', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-  await chrome.tabs.sendMessage(tab.id, { type: 'STOP_RECORDING' });
+  // Stop recording via background
+  await chrome.runtime.sendMessage({ type: 'STOP_RECORDING', tabId: tab ? tab.id : null });
 
   isRecording = false;
-  btnStart.disabled = false;
-  btnStop.disabled = true;
-  statusDiv.className = 'status stopped';
-  statusDiv.textContent = '⏸️ Enregistrement arrêté';
+  updateUIState();
 
   stopPolling();
   await loadScenario();
@@ -99,13 +140,19 @@ btnStop.addEventListener('click', async () => {
 btnPlay.addEventListener('click', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   
+  if (!tab || !tab.id) {
+    alert('❌ Impossible de lancer la lecture sur cet onglet');
+    return;
+  }
+
   // Ensure scenario is synced
+  currentScenario.Name = scenarioNameInput.value;
   await chrome.runtime.sendMessage({
     type: 'SET_SCENARIO',
     scenario: currentScenario
   });
 
-  statusDiv.className = 'status recording';
+  statusDiv.className = 'status playing';
   statusDiv.textContent = '▶️ Lecture en cours...';
   btnPlay.disabled = true;
   btnStart.disabled = true;
@@ -140,7 +187,7 @@ btnPlay.addEventListener('click', async () => {
       });
     } else if (state.status === 'error') {
       clearInterval(checkPlayback);
-      statusDiv.className = 'status stopped';
+      statusDiv.className = 'status error';
       statusDiv.textContent = '❌ ' + (state.error || 'Erreur');
       btnPlay.disabled = false;
       btnStart.disabled = false;
@@ -172,12 +219,13 @@ btnExport.addEventListener('click', async () => {
 
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${scenario.Name}.json`;
+  a.download = `${scenario.Name.replace(/[^a-z0-9]/gi, '_')}.json`;
   a.click();
 
   URL.revokeObjectURL(url);
 
-  alert('✅ Scénario exporté !');
+  statusDiv.className = 'status stopped';
+  statusDiv.textContent = '✅ Scénario exporté !';
 });
 
 // Import scenario
@@ -213,7 +261,9 @@ fileImport.addEventListener('change', async (e) => {
 
     scenarioNameInput.value = currentScenario.Name;
     renderCommands();
-    alert('✅ Scénario importé !');
+    
+    statusDiv.className = 'status stopped';
+    statusDiv.textContent = '✅ Scénario importé !';
   } catch (error) {
     alert('❌ Erreur lors de l\'import: ' + error.message);
   }
@@ -228,6 +278,8 @@ btnClear.addEventListener('click', async () => {
     await chrome.runtime.sendMessage({ type: 'CLEAR_SCENARIO' });
     currentScenario.Commands = [];
     renderCommands();
+    statusDiv.className = 'status stopped';
+    statusDiv.textContent = '🗑️ Scénario effacé';
   }
 });
 
@@ -235,9 +287,10 @@ btnClear.addEventListener('click', async () => {
 let pollInterval = null;
 
 function startPolling() {
+  stopPolling(); // Clear any existing interval
   pollInterval = setInterval(async () => {
     await loadScenario();
-  }, 1000); // Every second
+  }, 500); // Every 500ms for more responsive updates
 }
 
 function stopPolling() {
@@ -247,5 +300,15 @@ function stopPolling() {
   }
 }
 
-// Initialize
-loadScenario();
+// Initialize on popup open
+async function init() {
+  await loadScenario();
+  await loadRecordingState();
+  
+  // If recording, start polling
+  if (isRecording) {
+    startPolling();
+  }
+}
+
+init();

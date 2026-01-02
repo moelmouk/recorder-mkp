@@ -1,10 +1,18 @@
 /**
  * MKP Auto Recorder - Content Script
  * Based on UI Vision RPA code for accurate selector capture
+ * With visual recording indicator
  */
 
 (function() {
   'use strict';
+
+  // Prevent multiple injections
+  if (window.__mkpRecorderInjected) {
+    console.log('MKP Recorder already injected, skipping');
+    return;
+  }
+  window.__mkpRecorderInjected = true;
 
   // ========== CODE FROM UI VISION inspector.js ==========
   
@@ -266,6 +274,147 @@
     };
   };
 
+  // ========== RECORDING INDICATOR ==========
+  
+  let indicatorElement = null;
+  let commandCountElement = null;
+  let pulseInterval = null;
+
+  function createRecordingIndicator() {
+    // Remove existing indicator if any
+    removeRecordingIndicator();
+
+    // Create indicator container
+    indicatorElement = document.createElement('div');
+    indicatorElement.id = 'mkp-recording-indicator';
+    indicatorElement.innerHTML = `
+      <div class="mkp-indicator-content">
+        <div class="mkp-pulse"></div>
+        <span class="mkp-text">🔴 Enregistrement en cours</span>
+        <span class="mkp-count" id="mkp-command-count">0 commandes</span>
+      </div>
+    `;
+
+    // Add styles
+    const style = document.createElement('style');
+    style.id = 'mkp-recording-styles';
+    style.textContent = `
+      #mkp-recording-indicator {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        z-index: 2147483647;
+        background: linear-gradient(135deg, #ff4444 0%, #cc0000 100%);
+        color: white;
+        padding: 12px 20px;
+        border-radius: 25px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 14px;
+        font-weight: 600;
+        box-shadow: 0 4px 15px rgba(255, 0, 0, 0.4), 0 2px 5px rgba(0, 0, 0, 0.2);
+        cursor: default;
+        user-select: none;
+        animation: mkp-slide-in 0.3s ease-out;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+      }
+
+      @keyframes mkp-slide-in {
+        from {
+          transform: translateX(100px);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+
+      .mkp-indicator-content {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .mkp-pulse {
+        width: 12px;
+        height: 12px;
+        background: white;
+        border-radius: 50%;
+        animation: mkp-pulse-animation 1.5s ease-in-out infinite;
+      }
+
+      @keyframes mkp-pulse-animation {
+        0%, 100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(1.3);
+          opacity: 0.7;
+        }
+      }
+
+      .mkp-text {
+        white-space: nowrap;
+      }
+
+      .mkp-count {
+        background: rgba(255, 255, 255, 0.25);
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      #mkp-recording-indicator:hover {
+        transform: scale(1.02);
+      }
+
+      /* Highlight effect when recording action */
+      .mkp-action-highlight {
+        outline: 3px solid #ff4444 !important;
+        outline-offset: 2px !important;
+        transition: outline 0.1s ease-in-out !important;
+      }
+    `;
+
+    document.head.appendChild(style);
+    document.body.appendChild(indicatorElement);
+
+    commandCountElement = document.getElementById('mkp-command-count');
+
+    console.log('MKP Recording indicator shown');
+  }
+
+  function removeRecordingIndicator() {
+    const indicator = document.getElementById('mkp-recording-indicator');
+    const styles = document.getElementById('mkp-recording-styles');
+    
+    if (indicator) indicator.remove();
+    if (styles) styles.remove();
+    
+    indicatorElement = null;
+    commandCountElement = null;
+
+    console.log('MKP Recording indicator hidden');
+  }
+
+  function updateCommandCount(count) {
+    if (commandCountElement) {
+      commandCountElement.textContent = `${count} commande${count !== 1 ? 's' : ''}`;
+    }
+  }
+
+  // Highlight element briefly when recorded
+  function highlightElement(element) {
+    if (!element) return;
+    
+    element.classList.add('mkp-action-highlight');
+    setTimeout(() => {
+      element.classList.remove('mkp-action-highlight');
+    }, 300);
+  }
+
   // ========== RECORDING STATE ==========
   let isRecording = false;
   let recordedCommands = [];
@@ -273,6 +422,9 @@
   // ========== EVENT HANDLERS ==========
   const recordClick = (e) => {
     if (!isRecording) return;
+
+    // Ignore clicks on the indicator
+    if (e.target.closest('#mkp-recording-indicator')) return;
 
     const target = e.target;
     const locator = getLocator(target);
@@ -291,6 +443,10 @@
       command: command
     });
 
+    // Visual feedback
+    highlightElement(target);
+    updateCommandCount(recordedCommands.length);
+
     console.log('MKP Recorded:', command);
   };
 
@@ -298,6 +454,10 @@
     if (!isRecording) return;
 
     const target = e.target;
+    
+    // Ignore indicator
+    if (target.closest('#mkp-recording-indicator')) return;
+
     const tagName = target.tagName.toLowerCase();
 
     if (tagName === 'input' || tagName === 'textarea') {
@@ -318,6 +478,10 @@
         command: command
       });
 
+      // Visual feedback
+      highlightElement(target);
+      updateCommandCount(recordedCommands.length);
+
       console.log('MKP Recorded:', command);
     } else if (tagName === 'select') {
       const locator = getLocator(target);
@@ -337,6 +501,10 @@
         type: 'COMMAND_RECORDED',
         command: command
       });
+
+      // Visual feedback
+      highlightElement(target);
+      updateCommandCount(recordedCommands.length);
     }
   };
 
@@ -344,6 +512,10 @@
     if (!isRecording) return;
 
     const target = e.target;
+    
+    // Ignore indicator
+    if (target.closest('#mkp-recording-indicator')) return;
+
     if (target.type === 'checkbox' || target.type === 'radio') {
       const locator = getLocator(target);
 
@@ -360,6 +532,10 @@
         type: 'COMMAND_RECORDED',
         command: command
       });
+
+      // Visual feedback
+      highlightElement(target);
+      updateCommandCount(recordedCommands.length);
     }
   };
 
@@ -391,6 +567,19 @@
     } else if (message.type === 'STOP_RECORDING') {
       stopRecording();
       sendResponse({ success: true, commands: recordedCommands });
+    } else if (message.type === 'SHOW_RECORDING_INDICATOR') {
+      createRecordingIndicator();
+      // Get current command count from background
+      chrome.runtime.sendMessage({ type: 'GET_SCENARIO' }, (response) => {
+        if (response && response.scenario) {
+          updateCommandCount(response.scenario.Commands.length);
+          recordedCommands = response.scenario.Commands.slice();
+        }
+      });
+      sendResponse({ success: true });
+    } else if (message.type === 'HIDE_RECORDING_INDICATOR') {
+      removeRecordingIndicator();
+      sendResponse({ success: true });
     } else if (message.type === 'GET_COMMANDS') {
       sendResponse({ commands: recordedCommands });
     } else if (message.type === 'EXECUTE_COMMAND') {
@@ -402,6 +591,17 @@
       return true; // Keep channel open for async response
     }
     return true;
+  });
+
+  // ========== CHECK IF SHOULD BE RECORDING ==========
+  // On injection, check if we should be recording
+  chrome.runtime.sendMessage({ type: 'GET_RECORDING_STATE' }, (response) => {
+    if (response && response.isRecording) {
+      console.log('MKP: Restoring recording state');
+      startRecording();
+      createRecordingIndicator();
+      updateCommandCount(response.commandCount || 0);
+    }
   });
 
   // ========== COMMAND EXECUTOR (PLAYER) - Based on UI Vision command_runner.js ==========

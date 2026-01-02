@@ -1,6 +1,7 @@
 /**
  * MKP Auto Recorder - Background Service Worker
  * Based on UI Vision RPA architecture
+ * With persistent recording state
  */
 
 let currentScenario = {
@@ -10,6 +11,7 @@ let currentScenario = {
 };
 
 let isRecording = false;
+let recordingTabId = null;
 let isPlaying = false;
 let playbackState = {
   currentIndex: 0,
@@ -17,23 +19,91 @@ let playbackState = {
   error: null
 };
 
-// Message listener
+// ========== STATE PERSISTENCE ==========
+
+// Save state to storage
+async function saveState() {
+  await chrome.storage.local.set({
+    mkpRecorderState: {
+      isRecording,
+      recordingTabId,
+      currentScenario,
+      isPlaying,
+      playbackState
+    }
+  });
+}
+
+// Load state from storage
+async function loadState() {
+  const result = await chrome.storage.local.get('mkpRecorderState');
+  if (result.mkpRecorderState) {
+    const state = result.mkpRecorderState;
+    isRecording = state.isRecording || false;
+    recordingTabId = state.recordingTabId || null;
+    currentScenario = state.currentScenario || {
+      Name: 'Nouveau scénario',
+      CreationDate: new Date().toISOString().split('T')[0],
+      Commands: []
+    };
+    isPlaying = state.isPlaying || false;
+    playbackState = state.playbackState || { currentIndex: 0, status: 'idle', error: null };
+    
+    // Update badge if recording
+    updateBadge();
+    
+    // Re-inject content script if recording was active
+    if (isRecording && recordingTabId) {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: recordingTabId },
+          files: ['src/content_script.js']
+        });
+        await chrome.tabs.sendMessage(recordingTabId, { type: 'START_RECORDING' });
+        await chrome.tabs.sendMessage(recordingTabId, { type: 'SHOW_RECORDING_INDICATOR' });
+      } catch (e) {
+        console.log('Could not restore recording on tab:', e);
+      }
+    }
+  }
+}
+
+// Update extension badge
+function updateBadge() {
+  if (isRecording) {
+    chrome.action.setBadgeText({ text: 'REC' });
+    chrome.action.setBadgeBackgroundColor({ color: '#f44336' });
+  } else if (isPlaying) {
+    chrome.action.setBadgeText({ text: '▶' });
+    chrome.action.setBadgeBackgroundColor({ color: '#2196F3' });
+  } else {
+    chrome.action.setBadgeText({ text: '' });
+  }
+}
+
+// Initialize state on service worker start
+loadState();
+
+// ========== MESSAGE LISTENER ==========
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background received:', message.type);
 
   if (message.type === 'START_RECORDING') {
-    handleStartRecording(sender.tab ? sender.tab.id : null);
+    handleStartRecording(message.tabId || (sender.tab ? sender.tab.id : null));
     sendResponse({ success: true });
   } else if (message.type === 'STOP_RECORDING') {
-    handleStopRecording(sender.tab ? sender.tab.id : null);
+    handleStopRecording(message.tabId || (sender.tab ? sender.tab.id : null));
     sendResponse({ success: true });
   } else if (message.type === 'COMMAND_RECORDED') {
     currentScenario.Commands.push(message.command);
+    saveState();
     sendResponse({ success: true });
   } else if (message.type === 'GET_SCENARIO') {
     sendResponse({ scenario: currentScenario });
   } else if (message.type === 'SET_SCENARIO') {
     currentScenario = message.scenario;
+    saveState();
     sendResponse({ success: true });
   } else if (message.type === 'CLEAR_SCENARIO') {
     currentScenario = {
@@ -41,6 +111,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       CreationDate: new Date().toISOString().split('T')[0],
       Commands: []
     };
+    saveState();
     sendResponse({ success: true });
   } else if (message.type === 'EXPORT_SCENARIO') {
     sendResponse({ scenario: currentScenario });
@@ -50,20 +121,69 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.type === 'STOP_PLAYBACK') {
     isPlaying = false;
     playbackState.status = 'stopped';
+    updateBadge();
+    saveState();
     sendResponse({ success: true });
   } else if (message.type === 'GET_PLAYBACK_STATE') {
     sendResponse({ state: playbackState, isPlaying: isPlaying });
+  } else if (message.type === 'GET_RECORDING_STATE') {
+    sendResponse({ 
+      isRecording: isRecording, 
+      recordingTabId: recordingTabId,
+      commandCount: currentScenario.Commands.length
+    });
   }
 
   return true;
 });
 
+// ========== TAB EVENTS ==========
+
+// Listen for tab updates to re-inject content script when navigating
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (isRecording && tabId === recordingTabId && changeInfo.status === 'complete') {
+    console.log('Tab updated while recording, re-injecting content script');
+    
+    try {
+      // Small delay to ensure page is ready
+      await new Promise(r => setTimeout(r, 300));
+      
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        files: ['src/content_script.js']
+      });
+      
+      await chrome.tabs.sendMessage(tabId, { type: 'START_RECORDING' });
+      await chrome.tabs.sendMessage(tabId, { type: 'SHOW_RECORDING_INDICATOR' });
+    } catch (e) {
+      console.log('Error re-injecting on tab update:', e);
+    }
+  }
+});
+
+// Listen for tab close
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (isRecording && tabId === recordingTabId) {
+    console.log('Recording tab closed, stopping recording');
+    isRecording = false;
+    recordingTabId = null;
+    updateBadge();
+    saveState();
+  }
+});
+
+// ========== RECORDING HANDLERS ==========
+
 async function handleStartRecording(tabId) {
   isRecording = true;
+  recordingTabId = tabId;
   
   // Clear previous commands
   currentScenario.Commands = [];
   currentScenario.CreationDate = new Date().toISOString().split('T')[0];
+
+  // Update badge
+  updateBadge();
 
   // Inject content script if needed
   try {
@@ -72,28 +192,49 @@ async function handleStartRecording(tabId) {
       files: ['src/content_script.js']
     });
   } catch (e) {
-    console.log('Content script already injected');
+    console.log('Content script already injected or error:', e);
   }
 
-  // Start recording
-  await chrome.tabs.sendMessage(tabId, { type: 'START_RECORDING' });
+  // Start recording and show indicator
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'START_RECORDING' });
+    await chrome.tabs.sendMessage(tabId, { type: 'SHOW_RECORDING_INDICATOR' });
+  } catch (e) {
+    console.log('Error sending start recording message:', e);
+  }
+  
+  // Save state
+  await saveState();
   
   console.log('Recording started on tab', tabId);
 }
 
 async function handleStopRecording(tabId) {
   isRecording = false;
+  const previousTabId = recordingTabId;
+  recordingTabId = null;
+
+  // Update badge
+  updateBadge();
 
   try {
-    await chrome.tabs.sendMessage(tabId, { type: 'STOP_RECORDING' });
+    const targetTabId = tabId || previousTabId;
+    if (targetTabId) {
+      await chrome.tabs.sendMessage(targetTabId, { type: 'STOP_RECORDING' });
+      await chrome.tabs.sendMessage(targetTabId, { type: 'HIDE_RECORDING_INDICATOR' });
+    }
   } catch (e) {
     console.log('Error stopping recording:', e);
   }
 
+  // Save state
+  await saveState();
+
   console.log('Recording stopped');
 }
 
-// Play scenario - runs in background so it persists even if popup closes
+// ========== PLAYBACK HANDLERS ==========
+
 async function handlePlayScenario(tabId) {
   if (isPlaying) {
     console.log('Already playing');
@@ -114,6 +255,9 @@ async function handlePlayScenario(tabId) {
     error: null,
     total: currentScenario.Commands.length
   };
+
+  updateBadge();
+  await saveState();
 
   console.log('Starting playback of', currentScenario.Commands.length, 'commands');
 
@@ -137,6 +281,7 @@ async function handlePlayScenario(tabId) {
 
     const cmd = currentScenario.Commands[i];
     playbackState.currentIndex = i;
+    await saveState();
     
     console.log(`Executing command ${i + 1}/${currentScenario.Commands.length}:`, cmd.Command, cmd.Target);
 
@@ -182,6 +327,8 @@ async function handlePlayScenario(tabId) {
       playbackState.status = 'error';
       playbackState.error = `Commande ${i + 1} échouée: ${error.message || error}`;
       isPlaying = false;
+      updateBadge();
+      await saveState();
       break;
     }
 
@@ -195,6 +342,8 @@ async function handlePlayScenario(tabId) {
   }
   
   isPlaying = false;
+  updateBadge();
+  await saveState();
 }
 
 // Wait for page to fully load
