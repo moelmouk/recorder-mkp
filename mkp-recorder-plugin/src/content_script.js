@@ -32,10 +32,11 @@
       return pos === -1 ? it : tc.substr(pos, it.length);
     },
 
-    // Valider qu'un ID est valide (pas du code JS, pas de caractères spéciaux invalides)
+    // Valider qu'un ID est valide et stable (pas du code JS, pas dynamique)
     isValidId(id) {
       if (!id || typeof id !== 'string') return false;
       if (id.length > 200) return false; // ID trop long
+      
       // Rejeter si contient des caractères de code JS
       if (id.includes('function ') || id.includes('{') || id.includes('}') || 
           id.includes('(') || id.includes(')') || id.includes(';') ||
@@ -43,15 +44,42 @@
           id.includes('var ') || id.includes('const ') || id.includes('=>')) {
         return false;
       }
+      
       // Rejeter si commence par un chiffre
       if (/^\d/.test(id)) return false;
+      
       return true;
     },
 
-    // Obtenir l'ID valide d'un élément
+    // Vérifier si l'ID semble être dynamique (hash Angular, etc.)
+    isDynamicId(id) {
+      if (!id) return true;
+      
+      // Patterns d'IDs dynamiques Angular/React
+      // Exemples: "ac81bde7b997-0", "a363e40fc941-0", "cdk-123"
+      if (/^[a-f0-9]{8,}-\d+$/.test(id)) return true; // Hash + index
+      if (/^[a-f0-9]{12,}$/.test(id)) return true; // Long hash
+      if (/^ng-\d+$/.test(id)) return true; // Angular ng-xxx
+      if (/^mat-/.test(id)) return true; // Angular Material
+      if (/^cdk-/.test(id)) return true; // Angular CDK
+      if (/^:r[0-9a-z]+:$/.test(id)) return true; // React IDs
+      
+      return false;
+    },
+
+    // Obtenir l'ID valide et stable d'un élément
     getValidId(dom) {
       if (!dom) return null;
-      // Essayer d'abord dom.id puis getAttribute
+      const id = dom.id || dom.getAttribute('id');
+      if (!this.isValidId(id)) return null;
+      // Vérifier si c'est un ID stable (non dynamique)
+      if (this.isDynamicId(id)) return null;
+      return id;
+    },
+
+    // Obtenir n'importe quel ID valide (même dynamique) - pour les cas où on n'a pas le choix
+    getAnyValidId(dom) {
+      if (!dom) return null;
       const id = dom.id || dom.getAttribute('id');
       return this.isValidId(id) ? id : null;
     },
