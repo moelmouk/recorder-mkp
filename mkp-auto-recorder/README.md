@@ -1,6 +1,14 @@
-# MKP Auto Recorder
+# MKP Auto Recorder v1.1
 
 Extension Chrome pour enregistrer et rejouer des actions utilisateur, compatible avec le format UI Vision.
+
+## Nouveautés v1.1
+
+- ✅ **Témoin visuel** : Badge rouge "REC" pendant l'enregistrement, vert "▶" pendant la lecture
+- ✅ **État persistant** : L'état d'enregistrement est conservé même si vous fermez le popup
+- ✅ **Gestion des scénarios** : Sauvegardez et gérez plusieurs scénarios
+- ✅ **Interface améliorée** : Onglets pour séparer l'enregistreur et la liste des scénarios
+- ✅ **Barre de progression** : Visualisez l'avancement de la lecture
 
 ## Installation
 
@@ -9,31 +17,41 @@ Extension Chrome pour enregistrer et rejouer des actions utilisateur, compatible
 3. Cliquer sur **Charger l'extension non empaquetée**
 4. Sélectionner le dossier `/app/mkp-auto-recorder`
 
+⚠️ **Important** : Si l'extension était déjà chargée, cliquez sur le bouton "Actualiser" pour charger la nouvelle version.
+
 ## Utilisation
 
-### Enregistrement
+### Onglet "Enregistreur"
 
-1. Naviguer vers la page web que vous voulez automatiser
-2. Cliquer sur l'icône de l'extension MKP Auto Recorder
-3. Cliquer sur **▶️ Enregistrer**
-4. Effectuer vos actions sur la page (clics, saisies, sélections)
-5. Cliquer sur **⏹️ Arrêter** quand vous avez terminé
+#### Enregistrement
+1. Entrez un nom pour votre scénario
+2. Cliquez sur **⏺ Enregistrer**
+3. Un badge rouge "REC" apparaît sur l'icône de l'extension
+4. Effectuez vos actions sur la page (clics, saisies, sélections)
+5. Rouvrez le popup et cliquez sur **⏹ Arrêter**
 
-### Lecture
+#### Lecture
+1. Cliquez sur **▶ Rejouer** pour exécuter le scénario
+2. La barre de progression montre l'avancement
+3. Un badge vert "▶" apparaît pendant la lecture
+4. Cliquez sur **⏹ Stop** pour arrêter la lecture
 
-1. Cliquer sur **▶️ Rejouer** pour exécuter le scénario enregistré
-2. Le statut affiche la progression de la lecture
-3. L'extension exécute les commandes en séquence avec les sélecteurs de fallback
+#### Actions
+- **💾 Sauvegarder** : Enregistre le scénario dans la liste
+- **📤 Exporter** : Télécharge le scénario en JSON
+- **📥 Importer** : Charge un fichier JSON
+- **🗑️ Effacer** : Supprime les commandes actuelles
 
-### Export/Import
+### Onglet "Scénarios"
 
-- **💾 Exporter** : Télécharge le scénario au format JSON compatible UI Vision
-- **📥 Importer** : Charge un scénario JSON existant
-- **🗑️ Effacer** : Supprime le scénario actuel
+Liste de tous vos scénarios sauvegardés avec :
+- **▶** : Charger et jouer immédiatement
+- **📝** : Charger dans l'éditeur
+- **🗑** : Supprimer le scénario
 
 ## Format des scénarios
 
-Les scénarios sont compatibles avec UI Vision et utilisent le format suivant :
+Compatible UI Vision :
 
 ```json
 {
@@ -59,33 +77,36 @@ Les scénarios sont compatibles avec UI Vision et utilisent le format suivant :
 | Commande | Description |
 |----------|-------------|
 | `click` | Clic sur un élément |
-| `type` | Saisie de texte dans un champ |
-| `select` | Sélection dans un menu déroulant |
-| `check` | Cocher une case |
-| `uncheck` | Décocher une case |
-| `open` | Naviguer vers une URL |
-| `pause` | Attendre un délai |
-| `waitForVisible` | Attendre qu'un élément soit visible |
-| `mouseOver` | Survol d'un élément |
-| `verifyText` | Vérifier le texte d'un élément |
+| `type` | Saisie de texte |
+| `select` | Sélection dans un menu |
+| `check/uncheck` | Cases à cocher |
+| `open` | Navigation URL |
+| `pause` | Attente (ms) |
+| `waitForVisible` | Attendre visibilité |
+| `mouseOver` | Survol |
+| `verifyText` | Vérifier texte |
 
 ## Types de sélecteurs
 
-L'extension supporte les types de sélecteurs suivants :
-
-- `id=xxx` - Sélection par ID
-- `name=xxx` - Sélection par attribut name
-- `xpath=xxx` - Sélection par XPath
-- `css=xxx` - Sélection par CSS
-- `linkText=xxx` - Sélection par texte de lien
+- `id=xxx` - Par ID
+- `name=xxx` - Par attribut name
+- `xpath=xxx` - Par XPath
+- `css=xxx` - Par CSS
+- `linkText=xxx` - Par texte de lien
 
 ## Architecture
 
-- `manifest.json` - Configuration de l'extension
-- `src/background.js` - Service worker pour la gestion d'état et la lecture
-- `src/content_script.js` - Script injecté pour l'enregistrement et l'exécution
-- `src/popup.html/js` - Interface utilisateur
+```
+mkp-auto-recorder/
+├── manifest.json          # Configuration extension
+├── icons/                 # Icônes de l'extension
+├── src/
+│   ├── background.js      # Service worker (état, playback)
+│   ├── content_script.js  # Injection (capture, exécution)
+│   ├── popup.html         # Interface utilisateur
+│   └── popup.js           # Logique du popup
+```
 
 ## Basé sur
 
-Cette extension utilise la logique de capture et lecture de [UI Vision RPA](https://ui.vision/) pour garantir la compatibilité des scénarios.
+[UI Vision RPA](https://ui.vision/) pour la compatibilité des scénarios.
