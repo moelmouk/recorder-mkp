@@ -1,6 +1,6 @@
 /**
  * MKP Auto Recorder - Popup Script
- * Manages UI and communicates with background script
+ * Fixed: proper scenario isolation
  */
 
 // DOM Elements
@@ -37,14 +37,9 @@ let pollInterval = null;
 // ========== INITIALIZATION ==========
 
 async function init() {
-  // Load state from background
   await loadState();
-  
-  // Setup event listeners
   setupTabs();
   setupButtons();
-  
-  // Start polling if recording or playing
   startPolling();
 }
 
@@ -57,18 +52,20 @@ async function loadState() {
       currentScenario = state.currentScenario;
       savedScenarios = state.scenarios || [];
       
-      // Update UI based on state
-      updateStatusBar(state);
-      updateButtons(state);
-      renderCommands();
-      renderScenarios();
-      
-      if (currentScenario) {
-        scenarioNameInput.value = currentScenario.Name || 'Nouveau scénario';
-      }
+      updateUI(state);
     }
   } catch (e) {
-    console.error('Error loading state:', e);
+    console.error('Load state error:', e);
+  }
+}
+
+function updateUI(state) {
+  updateStatusBar(state);
+  updateButtons(state);
+  renderCommands();
+  
+  if (currentScenario) {
+    scenarioNameInput.value = currentScenario.Name || 'Nouveau scénario';
   }
 }
 
@@ -82,28 +79,29 @@ function updateStatusBar(state) {
     statusText.textContent = '🔴 Enregistrement en cours...';
   } else if (state.isPlaying) {
     statusBar.classList.add('playing');
-    const progress = state.playback;
-    statusText.textContent = `▶️ Lecture ${progress.currentIndex + 1}/${progress.total}...`;
-  } else if (state.playback && state.playback.status === 'completed') {
+    const p = state.playback;
+    statusText.textContent = `▶️ Lecture ${p.currentIndex + 1}/${p.total}...`;
+  } else if (state.playback?.status === 'completed') {
     statusBar.classList.add('idle');
     statusText.textContent = '✅ Lecture terminée';
-  } else if (state.playback && state.playback.status === 'error') {
+  } else if (state.playback?.status === 'error') {
     statusBar.classList.add('error');
     statusText.textContent = '❌ ' + (state.playback.error || 'Erreur');
   } else {
     statusBar.classList.add('idle');
-    statusText.textContent = '⏸️ Prêt à enregistrer';
+    statusText.textContent = '⏸️ Prêt';
   }
 }
 
 function updateButtons(state) {
-  const hasCommands = currentScenario && currentScenario.Commands && currentScenario.Commands.length > 0;
+  const hasCommands = currentScenario?.Commands?.length > 0;
   
   if (state.isRecording) {
     btnRecord.disabled = true;
     btnStop.disabled = false;
     btnPlay.disabled = true;
     btnStopPlay.disabled = true;
+    progressContainer.style.display = 'none';
   } else if (state.isPlaying) {
     btnRecord.disabled = true;
     btnStop.disabled = true;
@@ -126,11 +124,9 @@ function setupTabs() {
     tab.addEventListener('click', () => {
       const targetTab = tab.dataset.tab;
       
-      // Update tab buttons
       tabs.forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       
-      // Update tab content
       tabContents.forEach(content => {
         content.classList.remove('active');
         if (content.id === `tab-${targetTab}`) {
@@ -138,7 +134,6 @@ function setupTabs() {
         }
       });
       
-      // Refresh scenarios list when switching to that tab
       if (targetTab === 'scenarios') {
         loadScenarios();
       }
@@ -149,58 +144,57 @@ function setupTabs() {
 // ========== BUTTONS ==========
 
 function setupButtons() {
-  // Record button
+  // Record
   btnRecord.addEventListener('click', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    
-    // Update scenario name
     const name = scenarioNameInput.value.trim() || 'Nouveau scénario';
-    await chrome.runtime.sendMessage({ type: 'NEW_SCENARIO', name: name });
     
-    // Start recording
-    await chrome.runtime.sendMessage({ type: 'START_RECORDING', tabId: tab.id });
+    // Start recording with scenario name (background will reset everything)
+    await chrome.runtime.sendMessage({ 
+      type: 'START_RECORDING', 
+      tabId: tab.id,
+      scenarioName: name
+    });
     
     await loadState();
   });
 
-  // Stop recording button
+  // Stop
   btnStop.addEventListener('click', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     await chrome.runtime.sendMessage({ type: 'STOP_RECORDING', tabId: tab.id });
     await loadState();
   });
 
-  // Play button
+  // Play
   btnPlay.addEventListener('click', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     
-    // Update scenario name before playing
+    // Update name before playing
     if (currentScenario) {
       currentScenario.Name = scenarioNameInput.value.trim() || currentScenario.Name;
       await chrome.runtime.sendMessage({ type: 'SET_SCENARIO', scenario: currentScenario });
     }
     
-    // Start playback
     await chrome.runtime.sendMessage({ type: 'PLAY_SCENARIO', tabId: tab.id });
-    
     await loadState();
   });
 
-  // Stop playback button
+  // Stop Play
   btnStopPlay.addEventListener('click', async () => {
     await chrome.runtime.sendMessage({ type: 'STOP_PLAYBACK' });
     await loadState();
   });
 
-  // Save button
+  // Save
   btnSave.addEventListener('click', async () => {
     const name = scenarioNameInput.value.trim();
     if (!name) {
-      alert('Veuillez entrer un nom pour le scénario');
+      alert('Entrez un nom pour le scénario');
       return;
     }
     
-    if (!currentScenario || !currentScenario.Commands || currentScenario.Commands.length === 0) {
+    if (!currentScenario?.Commands?.length) {
       alert('Aucune commande à sauvegarder');
       return;
     }
@@ -210,21 +204,21 @@ function setupButtons() {
     alert('✅ Scénario sauvegardé !');
   });
 
-  // Export button
+  // Export
   btnExport.addEventListener('click', async () => {
-    if (!currentScenario || !currentScenario.Commands || currentScenario.Commands.length === 0) {
+    if (!currentScenario?.Commands?.length) {
       alert('Aucune commande à exporter');
       return;
     }
     
     const scenario = {
-      ...currentScenario,
-      Name: scenarioNameInput.value.trim() || currentScenario.Name
+      Name: scenarioNameInput.value.trim() || currentScenario.Name,
+      CreationDate: currentScenario.CreationDate,
+      Commands: currentScenario.Commands
     };
     
-    const dataStr = JSON.stringify(scenario, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
+    const blob = new Blob([JSON.stringify(scenario, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
     
     const a = document.createElement('a');
     a.href = url;
@@ -234,10 +228,8 @@ function setupButtons() {
     URL.revokeObjectURL(url);
   });
 
-  // Import button
-  btnImport.addEventListener('click', () => {
-    fileImport.click();
-  });
+  // Import
+  btnImport.addEventListener('click', () => fileImport.click());
 
   fileImport.addEventListener('change', async (e) => {
     const file = e.target.files[0];
@@ -248,22 +240,22 @@ function setupButtons() {
       const imported = JSON.parse(text);
       
       if (!imported.Commands || !Array.isArray(imported.Commands)) {
-        throw new Error('Format invalide');
+        throw new Error('Format invalide: Commands manquant');
       }
       
-      currentScenario = {
+      // COMPLETELY REPLACE with imported scenario
+      const newScenario = {
         Name: imported.Name || 'Scénario importé',
         CreationDate: imported.CreationDate || new Date().toISOString().split('T')[0],
-        Commands: imported.Commands
+        Commands: imported.Commands // Use as-is
       };
       
-      await chrome.runtime.sendMessage({ type: 'SET_SCENARIO', scenario: currentScenario });
+      await chrome.runtime.sendMessage({ type: 'SET_SCENARIO', scenario: newScenario });
       
-      scenarioNameInput.value = currentScenario.Name;
-      renderCommands();
+      // Reload to get the new scenario
       await loadState();
       
-      alert('✅ Scénario importé !');
+      alert(`✅ Importé: ${newScenario.Commands.length} commandes`);
     } catch (error) {
       alert('❌ Erreur: ' + error.message);
     }
@@ -271,121 +263,89 @@ function setupButtons() {
     fileImport.value = '';
   });
 
-  // Clear button
+  // Clear
   btnClear.addEventListener('click', async () => {
-    if (confirm('Voulez-vous vraiment effacer toutes les commandes ?')) {
-      await chrome.runtime.sendMessage({ type: 'CLEAR_SCENARIO' });
+    if (confirm('Effacer toutes les commandes ?')) {
+      await chrome.runtime.sendMessage({ type: 'CLEAR_COMMANDS' });
       await loadState();
     }
   });
 }
 
-// ========== COMMANDS RENDERING ==========
+// ========== COMMANDS ==========
 
 function renderCommands() {
-  if (!currentScenario || !currentScenario.Commands || currentScenario.Commands.length === 0) {
+  const commands = currentScenario?.Commands || [];
+  commandsCount.textContent = commands.length;
+  
+  if (commands.length === 0) {
     commandsDiv.innerHTML = `
       <div class="empty-state">
-        Aucune commande enregistrée.<br>
-        Cliquez sur <strong>Enregistrer</strong> pour commencer.
+        Aucune commande.<br>
+        Cliquez sur <strong>Enregistrer</strong>.
       </div>
     `;
-    commandsCount.textContent = '0';
     return;
   }
   
-  const commands = currentScenario.Commands;
-  commandsCount.textContent = commands.length;
-  
-  const html = commands.map((cmd, index) => `
-    <div class="command-item" data-index="${index}">
-      <div class="cmd">${index + 1}. ${cmd.Command}</div>
-      <div class="target" title="${cmd.Target || ''}">${cmd.Target || '(aucune cible)'}</div>
+  commandsDiv.innerHTML = commands.map((cmd, i) => `
+    <div class="command-item" data-index="${i}">
+      <div class="cmd">${i + 1}. ${cmd.Command}</div>
+      <div class="target" title="${cmd.Target || ''}">${(cmd.Target || '').substring(0, 60)}...</div>
     </div>
   `).join('');
-  
-  commandsDiv.innerHTML = html;
 }
 
-function highlightCommand(index) {
-  const items = commandsDiv.querySelectorAll('.command-item');
-  items.forEach((item, i) => {
-    item.classList.toggle('active', i === index);
-  });
-}
-
-// ========== SCENARIOS LIST ==========
+// ========== SCENARIOS ==========
 
 async function loadScenarios() {
   try {
     const response = await chrome.runtime.sendMessage({ type: 'GET_SCENARIOS' });
     savedScenarios = response.scenarios || [];
     renderScenarios();
-  } catch (e) {
-    console.error('Error loading scenarios:', e);
-  }
+  } catch (e) {}
 }
 
 function renderScenarios() {
-  if (!savedScenarios || savedScenarios.length === 0) {
-    scenariosList.innerHTML = `
-      <div class="no-scenarios">
-        Aucun scénario sauvegardé.<br>
-        Enregistrez et sauvegardez un scénario.
-      </div>
-    `;
+  if (!savedScenarios.length) {
+    scenariosList.innerHTML = '<div class="no-scenarios">Aucun scénario sauvegardé.</div>';
     return;
   }
   
-  const html = savedScenarios.map((scenario, index) => `
-    <div class="scenario-item" data-index="${index}">
+  scenariosList.innerHTML = savedScenarios.map((s, i) => `
+    <div class="scenario-item">
       <div class="scenario-item-info">
-        <div class="scenario-item-name">${scenario.Name}</div>
-        <div class="scenario-item-meta">
-          ${scenario.Commands.length} commandes • ${scenario.CreationDate || 'Date inconnue'}
-        </div>
+        <div class="scenario-item-name">${s.Name}</div>
+        <div class="scenario-item-meta">${s.Commands.length} commandes</div>
       </div>
       <div class="scenario-item-actions">
-        <button class="btn-play btn-small" onclick="loadAndPlayScenario(${index})">▶</button>
-        <button class="btn-secondary btn-small" onclick="loadScenarioToEditor(${index})">📝</button>
-        <button class="btn-danger btn-small" onclick="deleteScenario(${index})">🗑</button>
+        <button class="btn-play btn-small" onclick="playScenario(${i})">▶</button>
+        <button class="btn-secondary btn-small" onclick="loadScenario(${i})">📝</button>
+        <button class="btn-danger btn-small" onclick="deleteScenario(${i})">🗑</button>
       </div>
     </div>
   `).join('');
-  
-  scenariosList.innerHTML = html;
 }
 
-// Global functions for inline onclick handlers
-window.loadScenarioToEditor = async function(index) {
-  await chrome.runtime.sendMessage({ type: 'LOAD_SCENARIO', index: index });
+window.loadScenario = async function(index) {
+  await chrome.runtime.sendMessage({ type: 'LOAD_SCENARIO', index });
   await loadState();
   
   // Switch to recorder tab
-  tabs.forEach(t => t.classList.remove('active'));
-  document.querySelector('[data-tab="recorder"]').classList.add('active');
-  tabContents.forEach(c => c.classList.remove('active'));
-  document.getElementById('tab-recorder').classList.add('active');
+  document.querySelector('[data-tab="recorder"]').click();
 };
 
-window.loadAndPlayScenario = async function(index) {
-  await chrome.runtime.sendMessage({ type: 'LOAD_SCENARIO', index: index });
+window.playScenario = async function(index) {
+  await chrome.runtime.sendMessage({ type: 'LOAD_SCENARIO', index });
   await loadState();
-  
-  // Switch to recorder tab and play
-  tabs.forEach(t => t.classList.remove('active'));
-  document.querySelector('[data-tab="recorder"]').classList.add('active');
-  tabContents.forEach(c => c.classList.remove('active'));
-  document.getElementById('tab-recorder').classList.add('active');
-  
-  // Trigger play
+  document.querySelector('[data-tab="recorder"]').click();
   btnPlay.click();
 };
 
 window.deleteScenario = async function(index) {
-  const scenario = savedScenarios[index];
-  if (confirm(`Supprimer le scénario "${scenario.Name}" ?`)) {
-    await chrome.runtime.sendMessage({ type: 'DELETE_SCENARIO', index: index });
+  const s = savedScenarios[index];
+  if (confirm(`Supprimer "${s.Name}" ?`)) {
+    await chrome.runtime.sendMessage({ type: 'DELETE_SCENARIO', index });
     await loadScenarios();
   }
 };
@@ -398,36 +358,25 @@ function startPolling() {
   pollInterval = setInterval(async () => {
     try {
       const response = await chrome.runtime.sendMessage({ type: 'GET_STATE' });
-      if (response && response.state) {
-        const state = response.state;
+      if (response?.state) {
+        currentScenario = response.state.currentScenario;
+        updateUI(response.state);
         
-        // Update current scenario from state
-        currentScenario = state.currentScenario;
-        
-        // Update UI
-        updateStatusBar(state);
-        updateButtons(state);
-        renderCommands();
-        
-        // Update progress during playback
-        if (state.isPlaying && state.playback) {
-          const progress = state.playback;
-          const percent = ((progress.currentIndex + 1) / progress.total) * 100;
-          progressFill.style.width = `${percent}%`;
-          progressText.textContent = `${progress.currentIndex + 1} / ${progress.total}`;
-          highlightCommand(progress.currentIndex);
+        // Update progress
+        if (response.state.isPlaying && response.state.playback) {
+          const p = response.state.playback;
+          const pct = ((p.currentIndex + 1) / p.total) * 100;
+          progressFill.style.width = `${pct}%`;
+          progressText.textContent = `${p.currentIndex + 1} / ${p.total}`;
         }
       }
-    } catch (e) {
-      // Ignore errors during polling
-    }
+    } catch (e) {}
   }, 300);
 }
 
-// Cleanup on popup close
 window.addEventListener('unload', () => {
   if (pollInterval) clearInterval(pollInterval);
 });
 
-// Initialize
+// Init
 init();
