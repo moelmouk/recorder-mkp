@@ -32,6 +32,42 @@
       return pos === -1 ? it : tc.substr(pos, it.length);
     },
 
+    // Valider qu'un ID est valide (pas du code JS, pas de caractères spéciaux invalides)
+    isValidId(id) {
+      if (!id || typeof id !== 'string') return false;
+      if (id.length > 200) return false; // ID trop long
+      // Rejeter si contient des caractères de code JS
+      if (id.includes('function ') || id.includes('{') || id.includes('}') || 
+          id.includes('(') || id.includes(')') || id.includes(';') ||
+          id.includes('return ') || id.includes('throw ') || id.includes('let ') ||
+          id.includes('var ') || id.includes('const ') || id.includes('=>')) {
+        return false;
+      }
+      // Rejeter si commence par un chiffre
+      if (/^\d/.test(id)) return false;
+      return true;
+    },
+
+    // Obtenir l'ID valide d'un élément
+    getValidId(dom) {
+      if (!dom) return null;
+      // Essayer d'abord dom.id puis getAttribute
+      const id = dom.id || dom.getAttribute('id');
+      return this.isValidId(id) ? id : null;
+    },
+
+    // Obtenir le name valide d'un élément
+    getValidName(dom) {
+      if (!dom) return null;
+      const name = dom.getAttribute('name');
+      if (!name || typeof name !== 'string') return null;
+      // Rejeter si contient du code
+      if (name.includes('function ') || name.includes('{') || name.includes('}')) {
+        return null;
+      }
+      return name;
+    },
+
     isVisible(el) {
       if (!el || el === document) return true;
       const style = window.getComputedStyle(el);
