@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "MKP Auto Recorder",
-  "version": "1.0.0",
-  "description": "Enregistreur automatique compatible UI Vision",
+  "version": "1.1.0",
+  "description": "Enregistreur automatique compatible UI Vision avec indicateur visuel persistant",
   "permissions": [
     "activeTab",
     "scripting",
@@ -16,7 +16,8 @@
     "service_worker": "src/background.js"
   },
   "action": {
-    "default_popup": "src/popup.html"
+    "default_popup": "src/popup.html",
+    "default_title": "MKP Auto Recorder"
   },
   "content_scripts": [
     {
