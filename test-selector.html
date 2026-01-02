@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Sélecteurs MKP Recorder</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        h2 {
+            color: #333;
+            margin-top: 0;
+        }
+        .result {
+            background: #f5f5f5;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .invalid-id {
+            color: red;
+            font-weight: bold;
+        }
+        .valid-id {
+            color: green;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test de Validation des Sélecteurs - MKP Recorder</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: ID Valide Normal</h2>
+        <input type="text" id="market-place_borrower_client-needs_insureds_insureds-container_insured_0_insured-person_first-name_input-text_input" placeholder="Prénom">
+        <div class="result" id="result1"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 2: ID Invalide avec Code JavaScript</h2>
+        <input type="text" id="function r(){if(St(n),n.value===mo){let o=null;throw new C(-950,o)}return n.value}_project-type" placeholder="Type de projet">
+        <div class="result" id="result2"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 3: Éléments sans ID</h2>
+        <button class="btn-primary" name="submitButton">Valider</button>
+        <div class="result" id="result3"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 4: ID qui commence par un chiffre (invalide)</h2>
+        <div id="123invalid">Div avec ID invalide</div>
+        <div class="result" id="result4"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 5: Élément avec Name</h2>
+        <input type="email" name="email" placeholder="Email">
+        <div class="result" id="result5"></div>
+    </div>
+
+    <button onclick="runAllTests()">Lancer tous les tests</button>
+
+    <script>
+        // Copier les fonctions de validation du plugin
+        const domUtils = {
+            isValidId(id) {
+                if (!id || typeof id !== 'string' || id.length === 0) return false;
+                if (/^\d/.test(id)) return false;
+                if (/function|{|}|\(.*\).*{|=>|throw|new |if\s*\(|return\s/.test(id)) return false;
+                if (id.length > 200) return false;
+                return true;
+            },
+
+            getTagIndex(dom) {
+                if (!dom || !dom.parentNode) return 1;
+                return Array.from(dom.parentNode.childNodes)
+                    .filter(item => item.nodeType === 1 && item.tagName === dom.tagName)
+                    .indexOf(dom) + 1;
+            },
+
+            relativeXPath(dom) {
+                if (!dom || dom.nodeType !== 1) return '';
+                const index = this.getTagIndex(dom);
+                const siblings = Array.from(dom.parentNode.childNodes)
+                    .filter(item => item.nodeType === 1 && item.tagName === dom.tagName);
+                const tag = dom.tagName.toLowerCase();
+                return siblings.length > 1 ? `${tag}[${index}]` : tag;
+            },
+
+            xpath(dom) {
+                if (!dom || dom.nodeType !== 1) return '';
+                
+                const parts = [];
+                let current = dom;
+                
+                while (current && current.nodeType === 1) {
+                    const currentId = current.getAttribute('id');
+                    if (currentId && this.isValidId(currentId)) {
+                        parts.unshift(`*[@id="${currentId}"]`);
+                        break;
+                    }
+                    if (current.tagName.toLowerCase() === 'body') {
+                        parts.unshift('body');
+                        parts.unshift('html');
+                        break;
+                    }
+                    if (current.tagName.toLowerCase() === 'html') {
+                        parts.unshift('html');
+                        break;
+                    }
+                    parts.unshift(this.relativeXPath(current));
+                    current = current.parentNode;
+                }
+                
+                const prefix = parts[0] === 'html' || parts[0]?.startsWith('*[@id') ? '/' : '//';
+                return prefix + parts.join('/');
+            },
+
+            getLocator($dom) {
+                if (!$dom || $dom.nodeType !== 1) return { target: '', targetOptions: [] };
+                
+                const candidates = [];
+                const id = $dom.getAttribute('id');
+                const name = $dom.getAttribute('name');
+
+                if (id && this.isValidId(id)) {
+                    candidates.push(`id=${id}`);
+                }
+
+                if (name && name.length) {
+                    candidates.push(`name=${name}`);
+                }
+
+                try {
+                    const xp = this.xpath($dom);
+                    if (xp) candidates.push('xpath=' + xp);
+                } catch (e) {}
+
+                return {
+                    target: candidates[0] || '',
+                    targetOptions: candidates
+                };
+            }
+        };
+
+        function testElement(selector, resultId) {
+            const element = document.querySelector(selector);
+            const id = element.getAttribute('id');
+            const locator = domUtils.getLocator(element);
+            
+            let html = '<h3>Élément: ' + (element.tagName + (id ? '#' + id : '')) + '</h3>';
+            
+            if (id) {
+                const isValid = domUtils.isValidId(id);
+                html += '<p>ID: <span class="' + (isValid ? 'valid-id' : 'invalid-id') + '">' + id + '</span></p>';
+                html += '<p>ID Valide: ' + (isValid ? '✅ OUI' : '❌ NON') + '</p>';
+            }
+            
+            html += '<p><strong>Target sélectionné:</strong> ' + locator.target + '</p>';
+            html += '<p><strong>Alternatives:</strong></p><ul>';
+            locator.targetOptions.forEach(opt => {
+                html += '<li>' + opt + '</li>';
+            });
+            html += '</ul>';
+            
+            document.getElementById(resultId).innerHTML = html;
+        }
+
+        function runAllTests() {
+            testElement('input[placeholder="Prénom"]', 'result1');
+            testElement('input[placeholder="Type de projet"]', 'result2');
+            testElement('button[name="submitButton"]', 'result3');
+            testElement('#123invalid', 'result4');
+            testElement('input[name="email"]', 'result5');
+        }
+
+        // Lancer les tests au chargement
+        window.onload = runAllTests;
+    </script>
+</body>
+</html>
