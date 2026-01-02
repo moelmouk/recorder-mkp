@@ -67,55 +67,54 @@
       return true;
     },
 
-    // XPath avec ID du parent (comme UI Vision)
+    // XPath EXACT comme UI Vision - Recursive helper
+    xpathHelper(dom, cur, list) {
+      if (!dom) return null;
+      
+      if (!cur) {
+        if (dom.nodeType === 3) {
+          return this.xpathHelper(dom.parentNode);
+        } else {
+          return this.xpathHelper(dom, dom, []);
+        }
+      }
+      
+      if (!cur.parentNode) {
+        return ['html'].concat(list);
+      }
+      
+      if (cur.tagName === 'BODY') {
+        return ['html', 'body'].concat(list);
+      }
+      
+      // UI Vision utilise l'ID directement sans validation stricte
+      const curId = cur.getAttribute('id');
+      if (curId && curId.length > 0 && this.isValidId(curId)) {
+        return [`*[@id="${curId}"]`].concat(list);
+      }
+      
+      return this.xpathHelper(dom, cur.parentNode, [this.relativeXPath(cur)].concat(list));
+    },
+
+    // XPath principal (comme UI Vision)
     xpath(dom) {
       if (!dom || dom.nodeType !== 1) return '';
       
-      const parts = [];
-      let current = dom;
-      let foundIdAncestor = false;
+      const parts = this.xpathHelper(dom, null, null);
+      if (!parts) return '';
       
-      while (current && current.nodeType === 1) {
-        const currentId = current.getAttribute('id');
-        
-        // Si on trouve un ID valide, on s'arrête et on génère le XPath à partir de là
-        if (currentId && this.isValidId(currentId)) {
-          // Si c'est l'élément lui-même qui a l'ID
-          if (current === dom) {
-            return `//*[@id="${currentId}"]`;
-          }
-          // Sinon, on ajoute l'ID et on construit le chemin relatif
-          foundIdAncestor = true;
-          parts.unshift(`*[@id="${currentId}"]`);
-          break;
-        }
-        
-        if (current.tagName.toLowerCase() === 'body') {
-          parts.unshift('body');
-          parts.unshift('html');
-          break;
-        }
-        if (current.tagName.toLowerCase() === 'html') {
-          parts.unshift('html');
-          break;
-        }
-        
-        parts.unshift(this.relativeXPath(current));
-        current = current.parentNode;
-      }
-      
-      const prefix = parts[0] === 'html' || parts[0]?.startsWith('*[@id') ? '/' : '//';
+      const prefix = parts[0] === 'html' ? '/' : '//';
       return prefix + parts.join('/');
     },
 
-    // XPath relatif court (comme //ng-select/div/div)
+    // XPath relatif court
     xpathShort(dom) {
       if (!dom || dom.nodeType !== 1) return '';
       
       const parts = [];
       let current = dom;
       let depth = 0;
-      const maxDepth = 5; // Limiter la profondeur
+      const maxDepth = 5;
       
       while (current && current.nodeType === 1 && depth < maxDepth) {
         if (current.tagName.toLowerCase() === 'body') break;
