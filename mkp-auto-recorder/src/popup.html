@@ -283,6 +283,40 @@
         </div>
       </div>
     </div>
+
+    <!-- Settings Modal -->
+    <div class="modal" id="settingsModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Paramètres</h3>
+          <button class="modal-close" id="settingsClose">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Backup (export JSON)</label>
+            <textarea id="backupOutput" readonly placeholder="Cliquez sur Backup pour générer le JSON..."></textarea>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-primary" id="btnGenerateBackup">Backup</button>
+            <button class="btn btn-secondary" id="btnCopyBackup">Copier</button>
+            <button class="btn btn-secondary" id="btnDownloadBackup">Télécharger</button>
+          </div>
+
+          <div class="form-group" style="margin-top: 16px;">
+            <label>Restore (import JSON)</label>
+            <textarea id="backupInput" placeholder="Collez ici le JSON de backup..."></textarea>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-secondary" id="btnLoadBackupFile">Charger fichier</button>
+            <button class="btn btn-primary" id="btnRestoreBackup">Restore</button>
+          </div>
+          <input type="file" id="backupFileInput" accept="application/json" style="display:none;">
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="settingsCancel">Fermer</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="popup.js"></script>

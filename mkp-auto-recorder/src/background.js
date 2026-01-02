@@ -97,6 +97,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background received:', message.type);
 
   switch (message.type) {
+    case 'RELOAD_STATE':
+      loadState().then(() => {
+        sendResponse({ success: true });
+      }).catch((e) => {
+        sendResponse({ success: false, error: e && e.message ? e.message : 'Failed to reload state' });
+      });
+      return true;
+
     case 'START_RECORDING':
       handleStartRecording(message.tabId || (sender.tab ? sender.tab.id : null));
       sendResponse({ success: true });

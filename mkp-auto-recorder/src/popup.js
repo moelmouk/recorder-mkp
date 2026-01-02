@@ -10,6 +10,7 @@ const elements = {
   tabBtns: document.querySelectorAll('.tab-btn'),
   tabPanes: document.querySelectorAll('.tab-pane'),
   btnSidePanel: document.getElementById('btnSidePanel'),
+  btnSettings: document.getElementById('btnSettings'),
   
   // Recorder Tab
   statusBar: document.getElementById('statusBar'),
@@ -58,7 +59,20 @@ const elements = {
   useRealTiming: document.getElementById('useRealTiming'),
   groupPlayClose: document.getElementById('groupPlayClose'),
   groupPlayCancel: document.getElementById('groupPlayCancel'),
-  groupPlayStart: document.getElementById('groupPlayStart')
+  groupPlayStart: document.getElementById('groupPlayStart'),
+
+  // Settings Modal
+  settingsModal: document.getElementById('settingsModal'),
+  settingsClose: document.getElementById('settingsClose'),
+  settingsCancel: document.getElementById('settingsCancel'),
+  backupOutput: document.getElementById('backupOutput'),
+  backupInput: document.getElementById('backupInput'),
+  btnGenerateBackup: document.getElementById('btnGenerateBackup'),
+  btnCopyBackup: document.getElementById('btnCopyBackup'),
+  btnDownloadBackup: document.getElementById('btnDownloadBackup'),
+  btnRestoreBackup: document.getElementById('btnRestoreBackup'),
+  btnLoadBackupFile: document.getElementById('btnLoadBackupFile'),
+  backupFileInput: document.getElementById('backupFileInput')
 };
 
 // ==================== STATE ====================
@@ -905,6 +919,153 @@ elements.groupPlayCancel.addEventListener('click', closeGroupPlayModal);
 function closeGroupPlayModal() {
   elements.groupPlayModal.classList.remove('active');
   state.playingGroupId = null;
+}
+
+// ==================== SETTINGS (BACKUP/RESTORE) ====================
+
+if (elements.btnSettings) {
+  elements.btnSettings.addEventListener('click', () => openSettingsModal());
+}
+
+if (elements.settingsClose) elements.settingsClose.addEventListener('click', closeSettingsModal);
+if (elements.settingsCancel) elements.settingsCancel.addEventListener('click', closeSettingsModal);
+
+function openSettingsModal() {
+  if (!elements.settingsModal) return;
+  elements.settingsModal.classList.add('active');
+}
+
+function closeSettingsModal() {
+  if (!elements.settingsModal) return;
+  elements.settingsModal.classList.remove('active');
+}
+
+if (elements.btnGenerateBackup) {
+  elements.btnGenerateBackup.addEventListener('click', async () => {
+    try {
+      const keys = ['mkpGroups', 'mkpScenarios', 'mkpRecorderState'];
+      const data = await chrome.storage.local.get(keys);
+      const backup = {
+        meta: {
+          version: (chrome.runtime.getManifest && chrome.runtime.getManifest().version) ? chrome.runtime.getManifest().version : null,
+          exportedAt: new Date().toISOString()
+        },
+        data: {
+          mkpGroups: data.mkpGroups || [],
+          mkpScenarios: data.mkpScenarios || [],
+          mkpRecorderState: data.mkpRecorderState || null
+        }
+      };
+
+      const json = JSON.stringify(backup, null, 2);
+      if (elements.backupOutput) elements.backupOutput.value = json;
+      showToast('Backup généré', 'success');
+    } catch (e) {
+      showToast(e && e.message ? e.message : 'Erreur backup', 'error');
+    }
+  });
+}
+
+if (elements.btnCopyBackup) {
+  elements.btnCopyBackup.addEventListener('click', async () => {
+    const text = elements.backupOutput ? elements.backupOutput.value : '';
+    if (!text) {
+      showToast('Aucun backup à copier', 'error');
+      return;
+    }
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        elements.backupOutput.focus();
+        elements.backupOutput.select();
+        document.execCommand('copy');
+      }
+      showToast('Backup copié', 'success');
+    } catch (e) {
+      showToast('Impossible de copier', 'error');
+    }
+  });
+}
+
+if (elements.btnDownloadBackup) {
+  elements.btnDownloadBackup.addEventListener('click', () => {
+    const text = elements.backupOutput ? elements.backupOutput.value : '';
+    if (!text) {
+      showToast('Aucun backup à télécharger', 'error');
+      return;
+    }
+
+    try {
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `mkp-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Téléchargement lancé', 'success');
+    } catch (e) {
+      showToast('Impossible de télécharger', 'error');
+    }
+  });
+}
+
+if (elements.btnLoadBackupFile && elements.backupFileInput) {
+  elements.btnLoadBackupFile.addEventListener('click', () => elements.backupFileInput.click());
+  elements.backupFileInput.addEventListener('change', async () => {
+    const file = elements.backupFileInput.files && elements.backupFileInput.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      if (elements.backupInput) elements.backupInput.value = text;
+      showToast('Fichier chargé', 'success');
+    } catch (e) {
+      showToast('Impossible de lire le fichier', 'error');
+    } finally {
+      elements.backupFileInput.value = '';
+    }
+  });
+}
+
+if (elements.btnRestoreBackup) {
+  elements.btnRestoreBackup.addEventListener('click', async () => {
+    const text = elements.backupInput ? elements.backupInput.value : '';
+    if (!text) {
+      showToast('Collez un JSON de backup', 'error');
+      return;
+    }
+
+    if (!confirm('Restaurer ce backup va écraser les données actuelles. Continuer ?')) return;
+
+    try {
+      const parsed = JSON.parse(text);
+      const data = parsed && parsed.data ? parsed.data : parsed;
+
+      const mkpGroups = Array.isArray(data.mkpGroups) ? data.mkpGroups : [];
+      const mkpScenarios = Array.isArray(data.mkpScenarios) ? data.mkpScenarios : [];
+      const mkpRecorderState = (data.mkpRecorderState && typeof data.mkpRecorderState === 'object') ? data.mkpRecorderState : null;
+
+      await chrome.storage.local.set({
+        mkpGroups,
+        mkpScenarios,
+        mkpRecorderState
+      });
+
+      await loadData();
+      refreshScenariosList();
+      refreshGroupsList();
+
+      try {
+        await chrome.runtime.sendMessage({ type: 'RELOAD_STATE' });
+      } catch (e) {}
+
+      showToast('Restore terminé', 'success');
+    } catch (e) {
+      showToast(e && e.message ? e.message : 'JSON invalide', 'error');
+    }
+  });
 }
 
 elements.groupPlayStart.addEventListener('click', async () => {
