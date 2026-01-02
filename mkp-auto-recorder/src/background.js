@@ -1,6 +1,6 @@
 /**
- * MKP Auto Recorder - Background Service Worker v2.0
- * With real timing capture, group playback, and persistent state
+ * MKP Auto Recorder - Background Service Worker v2.1
+ * With playback overlay, skip on error, and disabled commands support
  */
 
 let currentScenario = {
@@ -108,16 +108,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
 
     case 'COMMAND_RECORDED':
-      // Calculate timing since last command
       const now = Date.now();
       const timing = lastCommandTime ? now - lastCommandTime : 0;
       lastCommandTime = now;
       
-      // Add timing to command
       const commandWithTiming = {
         ...message.command,
         timing: timing,
-        timestamp: now
+        timestamp: now,
+        disabled: false
       };
       
       currentScenario.Commands.push(commandWithTiming);
@@ -277,10 +276,13 @@ async function handlePlayScenario(tabId, useRealTiming = true) {
     return;
   }
 
-  if (!currentScenario.Commands || currentScenario.Commands.length === 0) {
-    console.log('No commands to play');
+  // Filter out disabled commands
+  const activeCommands = currentScenario.Commands.filter(cmd => !cmd.disabled);
+
+  if (!activeCommands || activeCommands.length === 0) {
+    console.log('No active commands to play');
     playbackState.status = 'error';
-    playbackState.error = 'Aucune commande à jouer';
+    playbackState.error = 'Aucune commande active à jouer';
     return;
   }
 
@@ -290,15 +292,34 @@ async function handlePlayScenario(tabId, useRealTiming = true) {
     scenarioIndex: 0,
     status: 'playing',
     error: null,
-    total: currentScenario.Commands.length
+    total: activeCommands.length
   };
 
   updateBadge();
   await saveState();
 
-  await executeScenario(currentScenario, tabId, useRealTiming);
+  // Show playback overlay
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      files: ['src/content_script.js']
+    });
+    await chrome.tabs.sendMessage(tabId, { type: 'SHOW_PLAYBACK_OVERLAY' });
+  } catch (e) {
+    console.log('Error showing playback overlay:', e);
+  }
 
-  if (isPlaying) {
+  const scenarioToPlay = { ...currentScenario, Commands: activeCommands };
+  await executeScenario(scenarioToPlay, tabId, useRealTiming);
+
+  // Hide playback overlay
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'HIDE_PLAYBACK_OVERLAY' });
+  } catch (e) {
+    console.log('Error hiding playback overlay:', e);
+  }
+
+  if (isPlaying && playbackState.status !== 'error') {
     playbackState.status = 'completed';
     console.log('Playback completed successfully');
   }
@@ -334,6 +355,17 @@ async function handlePlayGroup(scenarios, tabId, useRealTiming = true) {
 
   console.log(`Starting group playback of ${scenarios.length} scenarios`);
 
+  // Show playback overlay
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      files: ['src/content_script.js']
+    });
+    await chrome.tabs.sendMessage(tabId, { type: 'SHOW_PLAYBACK_OVERLAY' });
+  } catch (e) {
+    console.log('Error showing playback overlay:', e);
+  }
+
   for (let i = 0; i < scenarios.length; i++) {
     if (!isPlaying) {
       console.log('Group playback stopped by user');
@@ -342,26 +374,41 @@ async function handlePlayGroup(scenarios, tabId, useRealTiming = true) {
     }
 
     const scenario = scenarios[i];
+    // Filter disabled commands
+    const activeCommands = scenario.Commands.filter(cmd => !cmd.disabled);
+    
+    if (activeCommands.length === 0) {
+      console.log(`Skipping scenario ${i + 1} - no active commands`);
+      continue;
+    }
+
     playbackState.scenarioIndex = i;
-    playbackState.total = scenario.Commands.length;
+    playbackState.total = activeCommands.length;
     playbackState.currentIndex = 0;
     await saveState();
 
     console.log(`Playing scenario ${i + 1}/${scenarios.length}: ${scenario.Name}`);
 
-    const success = await executeScenario(scenario, tabId, useRealTiming);
+    const scenarioToPlay = { ...scenario, Commands: activeCommands };
+    const success = await executeScenario(scenarioToPlay, tabId, useRealTiming);
     
-    if (!success) {
+    if (!success && playbackState.status === 'stopped') {
       break;
     }
 
-    // Small delay between scenarios
     if (i < scenarios.length - 1) {
       await new Promise(r => setTimeout(r, 500));
     }
   }
 
-  if (isPlaying) {
+  // Hide playback overlay
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'HIDE_PLAYBACK_OVERLAY' });
+  } catch (e) {
+    console.log('Error hiding playback overlay:', e);
+  }
+
+  if (isPlaying && playbackState.status !== 'error') {
     playbackState.status = 'completed';
     console.log('Group playback completed');
   }
@@ -390,68 +437,129 @@ async function executeScenario(scenario, tabId, useRealTiming) {
     }
 
     const cmd = scenario.Commands[i];
+    
+    // Skip disabled commands (should already be filtered, but double check)
+    if (cmd.disabled) {
+      console.log(`Skipping disabled command ${i + 1}`);
+      continue;
+    }
+
     playbackState.currentIndex = i;
     await saveState();
 
     console.log(`Executing command ${i + 1}/${scenario.Commands.length}:`, cmd.Command, cmd.Target);
 
-    // Apply real timing delay if enabled
+    // Update overlay
+    try {
+      await chrome.tabs.sendMessage(tabId, {
+        type: 'UPDATE_PLAYBACK_OVERLAY',
+        current: i + 1,
+        total: scenario.Commands.length,
+        command: cmd
+      });
+    } catch (e) {
+      console.log('Error updating overlay:', e);
+    }
+
+    // Apply real timing delay
     if (useRealTiming && cmd.timing && cmd.timing > 0 && i > 0) {
-      const delay = Math.min(cmd.timing, 10000); // Max 10 seconds
+      const delay = Math.min(cmd.timing, 10000);
       console.log(`Waiting ${delay}ms (real timing)`);
       await new Promise(r => setTimeout(r, delay));
     }
 
-    try {
-      // Handle 'open' command
-      if (cmd.Command && cmd.Command.toLowerCase() === 'open') {
-        const url = cmd.Target;
-        if (url) {
-          console.log('Navigating to:', url);
-          await chrome.tabs.update(tabId, { url: url });
-          await waitForPageLoad(tabId);
-          
-          await new Promise(r => setTimeout(r, 500));
-          try {
-            await chrome.scripting.executeScript({
-              target: { tabId: tabId },
-              files: ['src/content_script.js']
-            });
-          } catch (e) {
-            console.log('Content script injection after navigation:', e);
+    let retryCommand = true;
+    while (retryCommand) {
+      retryCommand = false;
+
+      try {
+        // Handle 'open' command
+        if (cmd.Command && cmd.Command.toLowerCase() === 'open') {
+          const url = cmd.Target;
+          if (url) {
+            console.log('Navigating to:', url);
+            await chrome.tabs.update(tabId, { url: url });
+            await waitForPageLoad(tabId);
+            
+            await new Promise(r => setTimeout(r, 500));
+            try {
+              await chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                files: ['src/content_script.js']
+              });
+              await chrome.tabs.sendMessage(tabId, { type: 'SHOW_PLAYBACK_OVERLAY' });
+            } catch (e) {
+              console.log('Content script injection after navigation:', e);
+            }
           }
+          continue;
         }
-        continue;
+
+        // Handle 'pause' command
+        if (cmd.Command && cmd.Command.toLowerCase() === 'pause') {
+          const pauseTime = parseInt(cmd.Target) || parseInt(cmd.Value) || 1000;
+          console.log(`Pausing for ${pauseTime}ms`);
+          await new Promise(r => setTimeout(r, pauseTime));
+          continue;
+        }
+
+        // Execute other commands via content script
+        const response = await chrome.tabs.sendMessage(tabId, {
+          type: 'EXECUTE_COMMAND',
+          command: cmd
+        });
+
+        if (response && !response.success) {
+          throw new Error(response.error || 'Command failed');
+        }
+
+        console.log(`Command ${i + 1} completed successfully`);
+
+      } catch (error) {
+        console.error(`Error executing command ${i + 1}:`, error);
+
+        // Show error and wait for user action
+        try {
+          const actionResponse = await chrome.tabs.sendMessage(tabId, {
+            type: 'SHOW_PLAYBACK_ERROR',
+            error: `Étape ${i + 1} échouée: ${error.message || error}`
+          });
+
+          const action = actionResponse.action;
+          console.log('User action:', action);
+
+          if (action === 'skip') {
+            // Skip this command, continue with next
+            console.log('User chose to skip');
+            playbackState.status = 'playing';
+            await chrome.tabs.sendMessage(tabId, { type: 'HIDE_PLAYBACK_ERROR' });
+            break; // Exit retry loop, continue to next command
+          } else if (action === 'retry') {
+            // Retry this command
+            console.log('User chose to retry');
+            retryCommand = true;
+            await chrome.tabs.sendMessage(tabId, { type: 'HIDE_PLAYBACK_ERROR' });
+          } else if (action === 'stop') {
+            // Stop playback
+            console.log('User chose to stop');
+            playbackState.status = 'stopped';
+            playbackState.error = `Arrêté à l'étape ${i + 1}`;
+            isPlaying = false;
+            updateBadge();
+            await saveState();
+            return false;
+          }
+        } catch (e) {
+          // If can't communicate with content script, stop
+          console.error('Error showing error dialog:', e);
+          playbackState.status = 'error';
+          playbackState.error = `Étape ${i + 1} échouée: ${error.message || error}`;
+          isPlaying = false;
+          updateBadge();
+          await saveState();
+          return false;
+        }
       }
-
-      // Handle 'pause' command
-      if (cmd.Command && cmd.Command.toLowerCase() === 'pause') {
-        const pauseTime = parseInt(cmd.Target) || parseInt(cmd.Value) || 1000;
-        console.log(`Pausing for ${pauseTime}ms`);
-        await new Promise(r => setTimeout(r, pauseTime));
-        continue;
-      }
-
-      // Execute other commands via content script
-      const response = await chrome.tabs.sendMessage(tabId, {
-        type: 'EXECUTE_COMMAND',
-        command: cmd
-      });
-
-      if (response && !response.success) {
-        throw new Error(response.error || 'Command failed');
-      }
-
-      console.log(`Command ${i + 1} completed successfully`);
-
-    } catch (error) {
-      console.error(`Error executing command ${i + 1}:`, error);
-      playbackState.status = 'error';
-      playbackState.error = `Commande ${i + 1} échouée: ${error.message || error}`;
-      isPlaying = false;
-      updateBadge();
-      await saveState();
-      return false;
     }
 
     // Minimum delay between commands
@@ -480,4 +588,4 @@ function waitForPageLoad(tabId) {
   });
 }
 
-console.log('MKP Auto Recorder background v2.0 loaded');
+console.log('MKP Auto Recorder background v2.1 loaded');
