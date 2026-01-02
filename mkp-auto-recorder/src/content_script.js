@@ -1,6 +1,6 @@
 /**
- * MKP Auto Recorder - Content Script v2.0
- * With real timing capture and modern indicator
+ * MKP Auto Recorder - Content Script v2.1
+ * With playback overlay, skip on error, and improved indicator
  */
 
 (function() {
@@ -178,9 +178,125 @@
       </div>
     `;
 
+    injectStyles();
+    document.body.appendChild(indicatorElement);
+    console.log('MKP Recording indicator shown');
+  }
+
+  function removeRecordingIndicator() {
+    const indicator = document.getElementById('mkp-recording-indicator');
+    if (indicator) indicator.remove();
+    indicatorElement = null;
+  }
+
+  function updateCommandCount(count) {
+    const el = document.getElementById('mkp-cmd-count');
+    if (el) el.textContent = count;
+  }
+
+  // ========== PLAYBACK OVERLAY ==========
+
+  let playbackOverlay = null;
+  let skipResolve = null;
+
+  function createPlaybackOverlay() {
+    removePlaybackOverlay();
+
+    playbackOverlay = document.createElement('div');
+    playbackOverlay.id = 'mkp-playback-overlay';
+    playbackOverlay.innerHTML = `
+      <div class="mkp-playback-inner">
+        <div class="mkp-playback-header">
+          <div class="mkp-playback-status">
+            <div class="mkp-play-pulse"></div>
+            <span>Lecture en cours</span>
+          </div>
+          <span class="mkp-playback-progress" id="mkp-progress">0/0</span>
+        </div>
+        <div class="mkp-playback-info">
+          <div class="mkp-step-label">Étape actuelle</div>
+          <div class="mkp-step-command" id="mkp-step-command">-</div>
+          <div class="mkp-step-target" id="mkp-step-target">-</div>
+        </div>
+        <div class="mkp-playback-error" id="mkp-error-box" style="display: none;">
+          <div class="mkp-error-text" id="mkp-error-text"></div>
+          <div class="mkp-error-actions">
+            <button class="mkp-btn mkp-btn-skip" id="mkp-btn-skip">⏭ Passer cette étape</button>
+            <button class="mkp-btn mkp-btn-retry" id="mkp-btn-retry">🔄 Réessayer</button>
+            <button class="mkp-btn mkp-btn-stop" id="mkp-btn-stop">⏹ Arrêter</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    injectStyles();
+    document.body.appendChild(playbackOverlay);
+
+    // Button events
+    document.getElementById('mkp-btn-skip').addEventListener('click', () => {
+      if (skipResolve) skipResolve('skip');
+    });
+    document.getElementById('mkp-btn-retry').addEventListener('click', () => {
+      if (skipResolve) skipResolve('retry');
+    });
+    document.getElementById('mkp-btn-stop').addEventListener('click', () => {
+      if (skipResolve) skipResolve('stop');
+    });
+
+    console.log('MKP Playback overlay shown');
+  }
+
+  function removePlaybackOverlay() {
+    const overlay = document.getElementById('mkp-playback-overlay');
+    if (overlay) overlay.remove();
+    playbackOverlay = null;
+    skipResolve = null;
+  }
+
+  function updatePlaybackOverlay(current, total, command) {
+    const progress = document.getElementById('mkp-progress');
+    const cmdEl = document.getElementById('mkp-step-command');
+    const targetEl = document.getElementById('mkp-step-target');
+    const errorBox = document.getElementById('mkp-error-box');
+
+    if (progress) progress.textContent = `${current}/${total}`;
+    if (cmdEl) cmdEl.textContent = command.Command || '-';
+    if (targetEl) {
+      const target = command.Target || '';
+      targetEl.textContent = target.length > 60 ? target.substring(0, 60) + '...' : target;
+      targetEl.title = target;
+    }
+    if (errorBox) errorBox.style.display = 'none';
+  }
+
+  function showPlaybackError(errorMessage) {
+    const errorBox = document.getElementById('mkp-error-box');
+    const errorText = document.getElementById('mkp-error-text');
+
+    if (errorBox) errorBox.style.display = 'block';
+    if (errorText) errorText.textContent = errorMessage;
+
+    // Return a promise that resolves when user clicks a button
+    return new Promise((resolve) => {
+      skipResolve = resolve;
+    });
+  }
+
+  function hidePlaybackError() {
+    const errorBox = document.getElementById('mkp-error-box');
+    if (errorBox) errorBox.style.display = 'none';
+    skipResolve = null;
+  }
+
+  // ========== INJECT STYLES ==========
+
+  function injectStyles() {
+    if (document.getElementById('mkp-recorder-styles')) return;
+
     const style = document.createElement('style');
-    style.id = 'mkp-recording-styles';
+    style.id = 'mkp-recorder-styles';
     style.textContent = `
+      /* Recording Indicator */
       #mkp-recording-indicator {
         position: fixed;
         top: 16px;
@@ -203,12 +319,15 @@
         border-radius: 50px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
       }
-      .mkp-pulse {
+      .mkp-pulse, .mkp-play-pulse {
         width: 10px;
         height: 10px;
         background: #ef4444;
         border-radius: 50%;
         animation: mkp-pulse 1.5s ease-in-out infinite;
+      }
+      .mkp-play-pulse {
+        background: #6366f1;
       }
       @keyframes mkp-pulse {
         0%, 100% { transform: scale(1); opacity: 1; }
@@ -236,24 +355,134 @@
         outline: 2px solid #6366f1 !important;
         outline-offset: 2px !important;
       }
+
+      /* Playback Overlay */
+      #mkp-playback-overlay {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        z-index: 2147483647;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        animation: mkp-slide-up 0.3s ease-out;
+      }
+      @keyframes mkp-slide-up {
+        from { transform: translateY(100px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+      .mkp-playback-inner {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+        min-width: 320px;
+        max-width: 400px;
+        overflow: hidden;
+      }
+      .mkp-playback-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .mkp-playback-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #1e293b;
+      }
+      .mkp-playback-progress {
+        background: #6366f1;
+        color: white;
+        padding: 4px 10px;
+        border-radius: 10px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .mkp-playback-info {
+        padding: 16px;
+      }
+      .mkp-step-label {
+        font-size: 10px;
+        font-weight: 600;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 6px;
+      }
+      .mkp-step-command {
+        display: inline-block;
+        padding: 4px 10px;
+        background: #eef2ff;
+        color: #6366f1;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
+      .mkp-step-target {
+        font-size: 12px;
+        color: #64748b;
+        font-family: 'Monaco', 'Menlo', monospace;
+        word-break: break-all;
+        background: #f8fafc;
+        padding: 8px 10px;
+        border-radius: 6px;
+        border: 1px solid #e2e8f0;
+      }
+      .mkp-playback-error {
+        padding: 16px;
+        background: #fef2f2;
+        border-top: 1px solid #fecaca;
+      }
+      .mkp-error-text {
+        font-size: 13px;
+        color: #dc2626;
+        margin-bottom: 12px;
+        font-weight: 500;
+      }
+      .mkp-error-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .mkp-btn {
+        padding: 8px 14px;
+        border: none;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .mkp-btn-skip {
+        background: #f59e0b;
+        color: white;
+      }
+      .mkp-btn-skip:hover {
+        background: #d97706;
+      }
+      .mkp-btn-retry {
+        background: #6366f1;
+        color: white;
+      }
+      .mkp-btn-retry:hover {
+        background: #4f46e5;
+      }
+      .mkp-btn-stop {
+        background: #64748b;
+        color: white;
+      }
+      .mkp-btn-stop:hover {
+        background: #475569;
+      }
     `;
 
     document.head.appendChild(style);
-    document.body.appendChild(indicatorElement);
-    console.log('MKP Recording indicator shown');
-  }
-
-  function removeRecordingIndicator() {
-    const indicator = document.getElementById('mkp-recording-indicator');
-    const styles = document.getElementById('mkp-recording-styles');
-    if (indicator) indicator.remove();
-    if (styles) styles.remove();
-    indicatorElement = null;
-  }
-
-  function updateCommandCount(count) {
-    const el = document.getElementById('mkp-cmd-count');
-    if (el) el.textContent = count;
   }
 
   function highlightElement(element) {
@@ -272,6 +501,7 @@
   const recordClick = (e) => {
     if (!isRecording) return;
     if (e.target.closest('#mkp-recording-indicator')) return;
+    if (e.target.closest('#mkp-playback-overlay')) return;
 
     const target = e.target;
     const locator = getLocator(target);
@@ -295,6 +525,7 @@
   const recordChange = (e) => {
     if (!isRecording) return;
     if (e.target.closest('#mkp-recording-indicator')) return;
+    if (e.target.closest('#mkp-playback-overlay')) return;
 
     const target = e.target;
     const tagName = target.tagName.toLowerCase();
@@ -374,6 +605,27 @@
         break;
       case 'HIDE_RECORDING_INDICATOR':
         removeRecordingIndicator();
+        sendResponse({ success: true });
+        break;
+      case 'SHOW_PLAYBACK_OVERLAY':
+        createPlaybackOverlay();
+        sendResponse({ success: true });
+        break;
+      case 'HIDE_PLAYBACK_OVERLAY':
+        removePlaybackOverlay();
+        sendResponse({ success: true });
+        break;
+      case 'UPDATE_PLAYBACK_OVERLAY':
+        updatePlaybackOverlay(message.current, message.total, message.command);
+        sendResponse({ success: true });
+        break;
+      case 'SHOW_PLAYBACK_ERROR':
+        showPlaybackError(message.error).then(action => {
+          sendResponse({ success: true, action: action });
+        });
+        return true; // Keep channel open for async
+      case 'HIDE_PLAYBACK_ERROR':
+        hidePlaybackError();
         sendResponse({ success: true });
         break;
       case 'GET_COMMANDS':
@@ -498,9 +750,10 @@
       case 'click':
       case 'clickandwait': {
         const el = findElementWithFallback(target, targets);
-        if (!el) throw new Error(`Element not found: ${target}`);
+        if (!el) throw new Error(`Élément non trouvé: ${target.substring(0, 50)}`);
         
         try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+        highlightElement(el);
         
         ['mousedown', 'mouseup', 'click'].forEach(eventType => {
           if (eventType === 'click' && typeof el.click === 'function') {
@@ -516,9 +769,10 @@
 
       case 'type': {
         const el = findElementWithFallback(target, targets);
-        if (!el) throw new Error(`Element not found: ${target}`);
+        if (!el) throw new Error(`Élément non trouvé: ${target.substring(0, 50)}`);
         
         try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+        highlightElement(el);
         focusIfEditable(el);
         
         el.value = '';
@@ -531,12 +785,13 @@
       case 'select':
       case 'selectandwait': {
         const el = findElementWithFallback(target, targets);
-        if (!el) throw new Error(`Element not found: ${target}`);
+        if (!el) throw new Error(`Élément non trouvé: ${target.substring(0, 50)}`);
         
+        highlightElement(el);
         const options = Array.from(el.getElementsByTagName('option'));
         let option = options.find(op => domText(op).trim() === value || op.text === value || op.value === value);
         
-        if (!option) throw new Error(`Cannot find option: ${value}`);
+        if (!option) throw new Error(`Option non trouvée: ${value}`);
         
         el.value = option.value;
         el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -545,7 +800,8 @@
 
       case 'check': {
         const el = findElementWithFallback(target, targets);
-        if (!el) throw new Error(`Element not found: ${target}`);
+        if (!el) throw new Error(`Élément non trouvé: ${target.substring(0, 50)}`);
+        highlightElement(el);
         el.checked = true;
         el.dispatchEvent(new Event('change', { bubbles: true }));
         return { success: true };
@@ -553,7 +809,8 @@
 
       case 'uncheck': {
         const el = findElementWithFallback(target, targets);
-        if (!el) throw new Error(`Element not found: ${target}`);
+        if (!el) throw new Error(`Élément non trouvé: ${target.substring(0, 50)}`);
+        highlightElement(el);
         el.checked = false;
         el.dispatchEvent(new Event('change', { bubbles: true }));
         return { success: true };
@@ -572,7 +829,7 @@
           await new Promise(r => setTimeout(r, interval));
           waited += interval;
         }
-        throw new Error(`Timeout waiting for: ${target}`);
+        throw new Error(`Timeout: élément non visible: ${target.substring(0, 50)}`);
       }
 
       case 'pause': {
@@ -586,9 +843,9 @@
         return { success: true };
 
       default:
-        throw new Error(`Unsupported command: ${command}`);
+        throw new Error(`Commande non supportée: ${command}`);
     }
   }
 
-  console.log('MKP Auto Recorder content script v2.0 loaded');
+  console.log('MKP Auto Recorder content script v2.1 loaded');
 })();
