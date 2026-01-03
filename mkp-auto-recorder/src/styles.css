@@ -1232,6 +1232,52 @@ body {
 }
 
 /* ==================== */
+/* SCENARIOS IN FOLDERS */
+/* ==================== */
+
+.scenario-list {
+  padding: 4px 0 4px 20px;
+  margin: 4px 0 4px 20px;
+  border-left: 2px solid var(--border-color);
+}
+
+.scenario-item {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px 4px 0;
+  border-radius: var(--border-radius-sm);
+  margin: 2px 0;
+  transition: var(--transition);
+  font-size: 13px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.scenario-item:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.scenario-name {
+  flex-grow: 1;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 8px;
+}
+
+.scenario-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 1; /* Rendre les boutons toujours visibles */
+  transition: opacity 0.2s ease;
+}
+/* Conserver l'effet de survol pour une meilleure expérience utilisateur */
+.scenario-item:hover .scenario-actions {
+  opacity: 1;
+}
+
+/* ==================== */
 /* Empty State          */
 /* ==================== */
 
