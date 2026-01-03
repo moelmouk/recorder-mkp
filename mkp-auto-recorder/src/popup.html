@@ -44,8 +44,14 @@
       <section class="tab-pane active" id="tab-recorder">
         <!-- Status Bar -->
         <div class="status-bar" id="statusBar">
-          <span class="status-indicator"></span>
-          <span class="status-text">Prêt à enregistrer</span>
+          <div class="status-content">
+            <span class="status-indicator"></span>
+            <span class="status-text">Prêt à enregistrer</span>
+          </div>
+          <div class="progress-container">
+            <div class="progress-bar" id="commandProgress"></div>
+            <div class="progress-time" id="commandTime">0ms</div>
+          </div>
         </div>
 
         <!-- Scenario Name -->

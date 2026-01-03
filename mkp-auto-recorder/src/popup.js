@@ -219,29 +219,74 @@ elements.btnPlay.addEventListener('click', async () => {
   pollPlaybackState();
 });
 
+function updateGlobalProgress(currentIndex, totalCommands) {
+  const progressBar = document.getElementById('commandProgress');
+  const timeDisplay = document.getElementById('commandTime');
+  
+  if (!progressBar || !timeDisplay) return;
+  
+  // Calculer le pourcentage de progression global
+  const progress = totalCommands > 0 ? Math.round((currentIndex / totalCommands) * 100) : 0;
+  progressBar.style.setProperty('--progress', `${progress}%`);
+  
+  // Mettre à jour le texte pour afficher la progression (ex: "3/10")
+  timeDisplay.textContent = `${currentIndex}/${totalCommands}`;
+  
+  // Changer la couleur quand on approche de la fin
+  if (currentIndex >= totalCommands * 0.9) {
+    progressBar.classList.add('ending-soon');
+  } else {
+    progressBar.classList.remove('ending-soon');
+  }
+}
+
+function resetCommandProgress() {
+  const progressBar = document.getElementById('commandProgress');
+  const timeDisplay = document.getElementById('commandTime');
+  
+  if (progressBar) {
+    progressBar.style.setProperty('--progress', '0%');
+    progressBar.classList.remove('ending-soon');
+  }
+  
+  if (timeDisplay) {
+    timeDisplay.textContent = '0/0';
+  }
+}
+
 function pollPlaybackState() {
   const interval = setInterval(async () => {
     const response = await chrome.runtime.sendMessage({ type: 'GET_PLAYBACK_STATE' });
     const st = response.state;
 
     if (st.status === 'playing') {
+      // Mettre à jour la progression globale
+      updateGlobalProgress(st.currentIndex + 1, st.total);
+      
+      // Mettre à jour le statut
       showStatus('playing', `Lecture ${st.currentIndex + 1}/${st.total}...`);
       highlightCommand(st.currentIndex);
+      
     } else if (st.status === 'completed') {
       clearInterval(interval);
+      // Mettre la barre à 100% à la fin
+      updateGlobalProgress(st.total, st.total);
       showStatus('success', 'Lecture terminée');
       showToast(`Scénario "${(elements.scenarioName && elements.scenarioName.value) ? elements.scenarioName.value : 'Nouveau scénario'}" terminé sans erreur`, 'success');
       elements.btnPlay.disabled = false;
       elements.btnStart.disabled = false;
       clearCommandHighlight();
+      
     } else if (st.status === 'error' || st.status === 'stopped') {
       clearInterval(interval);
       showStatus('error', st.error || 'Arrêté');
       elements.btnPlay.disabled = false;
       elements.btnStart.disabled = false;
       clearCommandHighlight();
+      
     } else if (st.status === 'skipped') {
-      // Continue polling - command was skipped
+      // Mettre à jour la progression même pour les commandes ignorées
+      updateGlobalProgress(st.currentIndex + 1, st.total);
       showStatus('playing', `Étape ignorée, continuation...`);
     }
   }, 200);
