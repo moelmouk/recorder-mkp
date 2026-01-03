@@ -77,11 +77,17 @@ const elements = {
 
 // ==================== STATE ====================
 
-let state = {
-  isRecording: false,
+const state = {
   currentScenario: createEmptyScenario(),
   scenarios: [],
   groups: [],
+  expandedGroups: {},
+  expandedFolders: new Set(),
+  recorderState: {
+    isRecording: false,
+    tabId: null,
+    commands: []
+  },
   editingCommandIndex: -1,
   editingScenarioId: null,
   playingGroupId: null
@@ -884,13 +890,150 @@ elements.btnExportAll.addEventListener('click', () => {
 
 // ==================== GROUPS ====================
 
+function setupGroupEventListeners() {
+  // Gestion du clic sur le bouton de bascule des dossiers
+  elements.groupsList.querySelectorAll('.toggle-folder').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFolder(btn.dataset.id);
+    });
+  });
+
+  // Gestion du clic sur l'en-tête d'un groupe/dossier
+  elements.groupsList.querySelectorAll('.group-item-header').forEach(header => {
+    header.addEventListener('click', (e) => {
+      if (!e.target.closest('button')) {
+        const groupId = header.closest('.group-item').dataset.id;
+        const group = state.groups.find(g => g.id === groupId);
+        if (group && isFolder(group)) {
+          toggleFolder(groupId);
+        }
+      }
+    });
+  });
+
+  // Gestion du bouton d'ajout de sous-groupe
+  elements.groupsList.querySelectorAll('.btn-add-subgroup').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const parentId = btn.dataset.parentId;
+      const name = prompt('Nom du nouveau sous-groupe:');
+      if (name) {
+        await createGroup(name, parentId, true); // Créer un dossier
+      }
+    });
+  });
+
+  // Gestion du bouton de renommage
+  elements.groupsList.querySelectorAll('.btn-rename-group').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      renameGroup(btn.dataset.id);
+    });
+  });
+
+  // Gestion du bouton de suppression
+  elements.groupsList.querySelectorAll('.btn-delete-group').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteGroup(btn.dataset.id);
+    });
+  });
+
+  // Gestion du bouton de lecture du dossier
+  elements.groupsList.querySelectorAll('.btn-play-group').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openGroupPlayModal(btn.dataset.id);
+    });
+  });
+}
+
+function renderGroupItem(group, level = 0) {
+  const isExpanded = state.expandedFolders.has(group.id);
+  const children = getChildGroups(group.id);
+  const hasChildren = children.length > 0;
+  const isGroupFolder = isFolder(group);
+  
+  // Compter les scénarios dans ce groupe et ses sous-groupes
+  const scenarioCount = state.scenarios.filter(s => s.groupId === group.id).length;
+  
+  let html = `
+    <div class="group-item ${isGroupFolder ? 'folder' : ''}" data-id="${group.id}" data-level="${level}">
+      <div class="group-item-header">
+        ${hasChildren ? `
+          <button class="toggle-folder" data-id="${group.id}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="${isExpanded ? '18 15 12 9 6 15' : '9 18 15 12 9 6'}"></polyline>
+            </svg>
+          </button>
+        ` : '<span class="toggle-spacer"></span>'}
+        
+        <span class="group-name">${escapeHtml(group.name)}</span>
+        <span class="group-scenario-count">${scenarioCount}</span>
+        
+        <div class="group-actions">
+          ${isGroupFolder ? `
+            <button class="cmd-icon-btn btn-play-group" data-id="${group.id}" title="Lire le dossier">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+            </button>
+          ` : ''}
+          <button class="cmd-icon-btn btn-add-subgroup" data-parent-id="${group.id}" title="Ajouter un sous-groupe">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+          </button>
+          <button class="cmd-icon-btn btn-rename-group" data-id="${group.id}" title="Renommer">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20h9"></path>
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+            </svg>
+          </button>
+          <button class="cmd-icon-btn btn-delete-group" data-id="${group.id}" title="Supprimer">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+              <path d="M10 11v6"></path>
+              <path d="M14 11v6"></path>
+              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+      
+      ${hasChildren ? `
+        <div class="group-children" style="display: ${isExpanded ? 'block' : 'none'};">
+          ${children.map(child => renderGroupItem(child, level + 1)).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+  
+  return html;
+}
+
 function refreshGroupsList() {
-  if (state.groups.length === 0) {
+  // Trier les groupes par nom
+  const groupsSorted = [...state.groups].sort((a, b) => {
+    // D'abord les dossiers, puis les groupes
+    if (isFolder(a) !== isFolder(b)) {
+      return isFolder(a) ? -1 : 1;
+    }
+    // Puis tri alphabétique
+    return a.name.localeCompare(b.name);
+  });
+  
+  const rootGroups = groupsSorted.filter(g => !g.parentId);
+  
+  if (rootGroups.length === 0) {
     elements.groupsList.innerHTML = `
       <div class="empty-state">
         <span class="empty-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <path d="M3 7a2 2 0 0 1 2-2h5l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
           </svg>
         </span>
         <p>Aucun groupe créé</p>
@@ -983,7 +1126,13 @@ function refreshGroupsList() {
     `;
   }).join('');
 
-  elements.groupsList.innerHTML = html;
+  elements.groupsList.innerHTML = rootGroups.map(group => renderGroupItem(group)).join('');
+  
+  // Ajouter les écouteurs d'événements
+  setupGroupEventListeners();
+  
+  // Mettre à jour les sélecteurs de groupe
+  updateGroupSelects();
 
   // Gestion du clic sur l'en-tête du groupe pour le plier/déplier
   elements.groupsList.querySelectorAll('.group-card-header').forEach(header => {
@@ -1058,19 +1207,73 @@ function refreshGroupsList() {
   });
 }
 
+async function addGroup(name, parentId = null, isFolder = false) {
+  const groupName = name.trim();
+  if (!groupName) return null;
+
+  const newGroup = {
+    id: generateId(),
+    name: groupName,
+    parentId,
+    isFolder,
+    createdAt: new Date().toISOString()
+  };
+  
+  state.groups.push(newGroup);
+  await saveData();
+  refreshGroupsList();
+  updateGroupSelects();
+  
+  // Développer le dossier parent si nécessaire
+  if (parentId) {
+    state.expandedFolders.add(parentId);
+  }
+  
+  return newGroup;
+}
+
 elements.btnAddGroup.addEventListener('click', async () => {
   const name = elements.newGroupName.value.trim();
   if (!name) return;
-
-  state.groups.push({
-    id: generateId(),
-    name: name
-  });
-
-  await saveData();
+  
+  // Vérifier si le nom contient des / pour la hiérarchie
+  const pathParts = name.split('/').map(part => part.trim()).filter(part => part);
+  
+  if (pathParts.length > 1) {
+    // Créer la hiérarchie de dossiers
+    let currentParentId = null;
+    
+    for (let i = 0; i < pathParts.length; i++) {
+      const part = pathParts[i];
+      const isLast = i === pathParts.length - 1;
+      
+      // Vérifier si le dossier existe déjà
+      const existingGroup = state.groups.find(
+        g => g.name.toLowerCase() === part.toLowerCase() && 
+             g.parentId === currentParentId
+      );
+      
+      if (existingGroup) {
+        currentParentId = existingGroup.id;
+        if (!existingGroup.isFolder) {
+          // Convertir en dossier si nécessaire
+          existingGroup.isFolder = true;
+          await saveData();
+        }
+      } else {
+        const newGroup = await addGroup(part, currentParentId, !isLast);
+        if (newGroup) {
+          currentParentId = newGroup.id;
+        }
+      }
+    }
+  } else {
+    // Créer un groupe simple
+    await addGroup(name);
+  }
+  
   elements.newGroupName.value = '';
-  updateGroupSelects();
-  refreshGroupsList();
+  showToast('Groupe créé avec succès', 'success');
 });
 
 async function renameGroup(id) {
@@ -1454,6 +1657,54 @@ function stopPolling() {
     clearInterval(pollInterval);
     pollInterval = null;
   }
+}
+
+// ==================== HIERARCHY HELPERS ====================
+
+function getGroupPath(group) {
+  if (!group) return [];
+  if (!group.parentId) return [group.id];
+  const parent = state.groups.find(g => g.id === group.parentId);
+  return [...getGroupPath(parent), group.id];
+}
+
+function getGroupBreadcrumb(group) {
+  if (!group) return [];
+  if (!group.parentId) return [group];
+  const parent = state.groups.find(g => g.id === group.parentId);
+  return [...getGroupBreadcrumb(parent), group];
+}
+
+function getChildGroups(groupId) {
+  return state.groups.filter(g => g.parentId === groupId);
+}
+
+function isFolder(group) {
+  return group.isFolder || false;
+}
+
+function toggleFolder(folderId) {
+  if (state.expandedFolders.has(folderId)) {
+    state.expandedFolders.delete(folderId);
+  } else {
+    state.expandedFolders.add(folderId);
+  }
+  refreshGroupsList();
+}
+
+async function createGroup(name, parentId = null, isFolder = false) {
+  const newGroup = {
+    id: generateId(),
+    name: name.trim(),
+    parentId,
+    isFolder,
+    createdAt: new Date().toISOString()
+  };
+  
+  state.groups.push(newGroup);
+  await saveData();
+  refreshGroupsList();
+  return newGroup;
 }
 
 // ==================== INIT ====================
