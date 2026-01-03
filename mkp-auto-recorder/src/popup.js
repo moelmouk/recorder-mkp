@@ -1015,7 +1015,7 @@ function renderGroupItem(group, level = 0) {
   return html;
 }
 
-function refreshGroupsList() {
+function refreshGroupsList(searchTerm = '') {
   // Trier les groupes par nom
   const groupsSorted = [...state.groups].sort((a, b) => {
     // D'abord les dossiers, puis les groupes
@@ -1026,9 +1026,41 @@ function refreshGroupsList() {
     return a.name.localeCompare(b.name);
   });
   
-  const rootGroups = groupsSorted.filter(g => !g.parentId);
+  // Fonction pour vérifier si un groupe ou ses parents correspondent à la recherche
+  const matchesSearch = (group, term) => {
+    if (!term) return true;
+    
+    const termLower = term.toLowerCase();
+    
+    // Vérifier le nom du groupe
+    if (group.name.toLowerCase().includes(termLower)) {
+      return true;
+    }
+    
+    // Vérifier les noms des parents
+    let current = group;
+    while (current.parentId) {
+      const parent = state.groups.find(g => g.id === current.parentId);
+      if (!parent) break;
+      
+      if (parent.name.toLowerCase().includes(termLower)) {
+        return true;
+      }
+      
+      current = parent;
+    }
+    
+    return false;
+  };
   
-  if (rootGroups.length === 0) {
+  // Filtrer les groupes en fonction du terme de recherche
+  const filteredGroups = searchTerm 
+    ? groupsSorted.filter(group => matchesSearch(group, searchTerm))
+    : groupsSorted;
+    
+  const rootGroups = filteredGroups.filter(g => !g.parentId);
+  
+  if (filteredGroups.length === 0) {
     elements.groupsList.innerHTML = `
       <div class="empty-state">
         <span class="empty-icon" aria-hidden="true">
@@ -1036,7 +1068,7 @@ function refreshGroupsList() {
             <path d="M3 7a2 2 0 0 1 2-2h5l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
           </svg>
         </span>
-        <p>Aucun groupe créé</p>
+        <p>${searchTerm ? 'Aucun résultat trouvé' : 'Aucun groupe créé'}</p>
       </div>
     `;
     return;
@@ -1716,6 +1748,15 @@ async function init() {
   await loadData();
   await loadCurrentScenario();
   await loadRecordingState();
+  
+  // Initialiser la recherche de groupes
+  const searchGroupsInput = document.getElementById('searchGroups');
+  if (searchGroupsInput) {
+    searchGroupsInput.addEventListener('input', (e) => {
+      const searchTerm = e.target.value.trim();
+      refreshGroupsList(searchTerm);
+    });
+  }
   
   if (state.currentScenario.Name) {
     elements.scenarioName.value = state.currentScenario.Name;
