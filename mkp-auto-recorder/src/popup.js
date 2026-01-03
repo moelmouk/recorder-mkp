@@ -11,6 +11,10 @@ const elements = {
   tabPanes: document.querySelectorAll('.tab-pane'),
   btnSidePanel: document.getElementById('btnSidePanel'),
   btnSettings: document.getElementById('btnSettings'),
+  btnHelp: document.getElementById('btnHelp'),
+  helpModal: document.getElementById('helpModal'),
+  helpClose: document.getElementById('helpClose'),
+  helpCloseBtn: document.getElementById('helpCloseBtn'),
   
   // Recorder Tab
   statusBar: document.getElementById('statusBar'),
@@ -976,7 +980,7 @@ function renderGroupItem(group, level = 0) {
         </div>
         
         <div class="group-actions" style="display: flex; gap: 4px;">
-          ${isRootFolder ? `
+          ${isGroupFolder ? `
             <button class="cmd-icon-btn btn-play-group" data-id="${group.id}" title="Lancer tous les scénarios de ${escapeHtml(group.name)}" style="color: var(--success);">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
@@ -1246,7 +1250,7 @@ function refreshGroupsList(searchTerm = '') {
   });
 }
 
-async function addGroup(name, parentId = null, isFolder = false) {
+async function addGroup(name, parentId = null, isFolder = true) {
   const groupName = name.trim();
   if (!groupName) return null;
 
@@ -1274,43 +1278,32 @@ async function addGroup(name, parentId = null, isFolder = false) {
 elements.btnAddGroup.addEventListener('click', async () => {
   const name = elements.newGroupName.value.trim();
   if (!name) return;
-  
-  // Vérifier si le nom contient des / pour la hiérarchie
-  const pathParts = name.split('/').map(part => part.trim()).filter(part => part);
-  
-  if (pathParts.length > 1) {
-    // Créer la hiérarchie de dossiers
-    let currentParentId = null;
-    
-    for (let i = 0; i < pathParts.length; i++) {
-      const part = pathParts[i];
-      const isLast = i === pathParts.length - 1;
-      
-      // Vérifier si le dossier existe déjà
-      const existingGroup = state.groups.find(
-        g => g.name.toLowerCase() === part.toLowerCase() && 
-             g.parentId === currentParentId
-      );
-      
-      if (existingGroup) {
-        currentParentId = existingGroup.id;
-        if (!existingGroup.isFolder) {
-          // Convertir en dossier si nécessaire
-          existingGroup.isFolder = true;
-          await saveData();
-        }
-      } else {
-        const newGroup = await addGroup(part, currentParentId, !isLast);
-        if (newGroup) {
-          currentParentId = newGroup.id;
-        }
+
+  // Découper en segments hiérarchiques
+  const pathParts = name.split('/').map(part => part.trim()).filter(Boolean);
+  let currentParentId = null;
+
+  for (let i = 0; i < pathParts.length; i++) {
+    const part = pathParts[i];
+
+    // Vérifier si un groupe de même nom existe déjà au même niveau
+    const existingGroup = state.groups.find(
+      g => g.name.toLowerCase() === part.toLowerCase() && 
+           g.parentId === currentParentId
+    );
+
+    if (existingGroup) {
+      // Si le groupe existe, on l'utilise comme parent pour le prochain segment
+      currentParentId = existingGroup.id;
+    } else {
+      // Créer un nouveau dossier (toujours un dossier maintenant)
+      const newGroup = await addGroup(part, currentParentId, true);
+      if (newGroup) {
+        currentParentId = newGroup.id;
       }
     }
-  } else {
-    // Créer un groupe simple
-    await addGroup(name);
   }
-  
+
   elements.newGroupName.value = '';
   showToast('Groupe créé avec succès', 'success');
 });
@@ -1790,13 +1783,27 @@ async function init() {
   await loadRecordingState();
   
   // Initialiser la recherche de groupes
-  const searchGroupsInput = document.getElementById('searchGroups');
-  if (searchGroupsInput) {
-    searchGroupsInput.addEventListener('input', (e) => {
-      const searchTerm = e.target.value.trim();
-      refreshGroupsList(searchTerm);
-    });
-  }
+  document.getElementById('searchGroups')?.addEventListener('input', (e) => {
+    refreshGroupsList(e.target.value);
+  });
+
+  elements.btnHelp?.addEventListener('click', () => {
+    if (elements.helpModal) elements.helpModal.classList.add('active');
+  });
+
+  elements.helpClose?.addEventListener('click', () => {
+    if (elements.helpModal) elements.helpModal.classList.remove('active');
+  });
+
+  elements.helpCloseBtn?.addEventListener('click', () => {
+    if (elements.helpModal) elements.helpModal.classList.remove('active');
+  });
+
+  window.addEventListener('click', (e) => {
+    if (elements.helpModal && e.target === elements.helpModal) {
+      elements.helpModal.classList.remove('active');
+    }
+  });
   
   if (state.currentScenario.Name) {
     elements.scenarioName.value = state.currentScenario.Name;
