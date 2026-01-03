@@ -487,9 +487,27 @@ async function locateCommand(index) {
 }
 
 function highlightCommand(index) {
-  elements.commandsList.querySelectorAll('.command-item').forEach((item, i) => {
+  const commandItems = elements.commandsList.querySelectorAll('.command-item');
+  commandItems.forEach((item, i) => {
     item.classList.toggle('active', i === index);
   });
+
+  // Faire défiler pour afficher la commande active
+  if (commandItems[index]) {
+    const container = elements.commandsList;
+    const item = commandItems[index];
+    const containerRect = container.getBoundingClientRect();
+    const itemRect = item.getBoundingClientRect();
+    
+    // Vérifier si l'élément est partiellement ou totalement en dehors de la vue
+    if (itemRect.top < containerRect.top + container.scrollTop) {
+      // Faire défiler vers le haut pour afficher l'élément
+      container.scrollTop = container.scrollTop - (containerRect.top - itemRect.top) - 10; // 10px de marge
+    } else if (itemRect.bottom > containerRect.bottom) {
+      // Faire défiler vers le bas pour afficher l'élément
+      container.scrollTop = container.scrollTop + (itemRect.bottom - containerRect.bottom) + 10; // 10px de marge
+    }
+  }
 }
 
 function clearCommandHighlight() {

@@ -660,8 +660,32 @@ body {
 }
 
 .commands-list {
-  max-height: 180px;
+  max-height: 300px;
   overflow-y: auto;
+  scroll-behavior: smooth;
+  scroll-padding: 10px;
+  padding-right: 5px;
+  margin-right: -5px;
+  position: relative;
+}
+
+/* Style pour la barre de défilement personnalisée */
+.commands-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.commands-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.commands-list::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.commands-list::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
 }
 
 .command-item {
