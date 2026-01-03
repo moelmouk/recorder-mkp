@@ -198,6 +198,7 @@
 
   let playbackOverlay = null;
   let skipResolve = null;
+  let playbackUiStatus = 'playing';
 
   function createPlaybackOverlay() {
     removePlaybackOverlay();
@@ -207,32 +208,70 @@
     playbackOverlay.innerHTML = `
       <div class="mkp-playback-inner">
         <div class="mkp-playback-header">
-          <div class="mkp-playback-status">
-            <div class="mkp-play-pulse"></div>
-            <span>Lecture en cours</span>
+          <div class="mkp-playback-status" id="mkp-playback-status">
+            <div class="mkp-play-pulse" id="mkp-play-pulse"></div>
+            <span id="mkp-playback-status-text">Lecture en cours</span>
           </div>
           <span class="mkp-playback-progress" id="mkp-progress">0/0</span>
         </div>
-        <div class="mkp-playback-info">
-          <div class="mkp-step-label">Étape actuelle</div>
-          <div class="mkp-step-command" id="mkp-step-command">-</div>
-          <div class="mkp-step-target" id="mkp-step-target">-</div>
-        </div>
-        <div class="mkp-playback-error" id="mkp-error-box" style="display: none;">
-          <div class="mkp-error-text" id="mkp-error-text"></div>
-          <div class="mkp-error-actions">
-            <button class="mkp-btn mkp-btn-skip" id="mkp-btn-skip">⏭ Passer cette étape</button>
-            <button class="mkp-btn mkp-btn-retry" id="mkp-btn-retry">🔄 Réessayer</button>
-            <button class="mkp-btn mkp-btn-stop" id="mkp-btn-stop">⏹ Arrêter</button>
+        <div class="mkp-playback-content">
+          <div class="mkp-playback-info">
+            <div class="mkp-step-header">
+              <div class="mkp-step-label">
+              <div class="mkp-playback-actions-box" id="mkp-playback-actions-box">
+                <div class="mkp-error-actions">
+                  <button class="mkp-btn mkp-btn-retry mkp-btn-pause" id="mkp-btn-pause">
+                    <span class="mkp-btn-icon" id="mkp-btn-pause-icon">||</span>
+                    <span id="mkp-btn-pause-text">Pause</span>
+                  </button>
+                  <button class="mkp-btn mkp-btn-stop" id="mkp-btn-stop-main">⏹ Arrêter</button>
+                </div>
+              </div>
+            </div>
+              
+            </div>
+            <div class="mkp-step-command" id="mkp-step-command">-</div>
+            <div class="mkp-step-target" id="mkp-step-target">-</div>
           </div>
-        </div>
+          <div class="mkp-playback-error" id="mkp-error-box" style="display: none;">
+        <div class="mkp-playback-error" id="mkp-error-box" style="display: none;">
+            <div class="mkp-error-text" id="mkp-error-text"></div>
+            <div class="mkp-error-actions">
+            <button class="mkp-btn mkp-btn-skip" id="mkp-btn-skip">⏭ Passer cette étape</button>
+              <button class="mkp-btn mkp-btn-retry" id="mkp-btn-retry">🔄 Réessayer</button>
+              <button class="mkp-btn mkp-btn-stop" id="mkp-btn-stop">⏹ Arrêter</button>
+            </div>
+          </div>
       </div>
     `;
 
     injectStyles();
     document.body.appendChild(playbackOverlay);
 
+    setPlaybackUiStatus('playing');
+
     // Button events
+    document.getElementById('mkp-btn-pause').addEventListener('click', async () => {
+      const nextStatus = playbackUiStatus === 'paused' ? 'playing' : 'paused';
+      setPlaybackUiStatus(nextStatus);
+      try {
+        const type = nextStatus === 'paused' ? 'PAUSE_PLAYBACK' : 'RESUME_PLAYBACK';
+        await chrome.runtime.sendMessage({ type });
+      } catch (e) {
+        console.log('Error toggling pause:', e);
+        setPlaybackUiStatus(playbackUiStatus === 'paused' ? 'playing' : 'paused');
+      }
+    });
+
+    document.getElementById('mkp-btn-stop-main').addEventListener('click', async () => {
+      removePlaybackOverlay();
+      try {
+        await chrome.runtime.sendMessage({ type: 'STOP_PLAYBACK' });
+      } catch (e) {
+        console.log('Error stopping playback:', e);
+      }
+    });
+
     document.getElementById('mkp-btn-skip').addEventListener('click', () => {
       if (skipResolve) skipResolve('skip');
     });
@@ -241,9 +280,46 @@
     });
     document.getElementById('mkp-btn-stop').addEventListener('click', () => {
       if (skipResolve) skipResolve('stop');
+      removePlaybackOverlay();
+      try {
+        chrome.runtime.sendMessage({ type: 'STOP_PLAYBACK' });
+      } catch (e) {}
     });
 
     console.log('MKP Playback overlay shown');
+  }
+
+  function setPlaybackUiStatus(status) {
+    playbackUiStatus = status;
+
+    const statusText = document.getElementById('mkp-playback-status-text');
+    const pauseIcon = document.getElementById('mkp-btn-pause-icon');
+    const pauseText = document.getElementById('mkp-btn-pause-text');
+    const pulse = document.getElementById('mkp-play-pulse');
+
+    if (status === 'paused') {
+      if (statusText) statusText.textContent = 'En pause';
+      if (pauseIcon) pauseIcon.textContent = '▶️';
+      if (pauseText) pauseText.textContent = 'Reprendre';
+      if (playbackOverlay) playbackOverlay.classList.add('mkp-paused');
+      if (pulse) pulse.setAttribute('aria-label', 'paused');
+      return;
+    }
+
+    if (status === 'stopped') {
+      if (statusText) statusText.textContent = 'Arrêtée';
+      if (pauseIcon) pauseIcon.textContent = '▶️';
+      if (pauseText) pauseText.textContent = 'Reprendre';
+      if (playbackOverlay) playbackOverlay.classList.remove('mkp-paused');
+      if (pulse) pulse.setAttribute('aria-label', 'stopped');
+      return;
+    }
+
+    if (statusText) statusText.textContent = 'Lecture en cours';
+    if (pauseIcon) pauseIcon.textContent = '||';
+    if (pauseText) pauseText.textContent = 'Pause';
+    if (playbackOverlay) playbackOverlay.classList.remove('mkp-paused');
+    if (pulse) pulse.setAttribute('aria-label', 'playing');
   }
 
   function removePlaybackOverlay() {
@@ -251,6 +327,7 @@
     if (overlay) overlay.remove();
     playbackOverlay = null;
     skipResolve = null;
+    playbackUiStatus = 'playing';
   }
 
   function updatePlaybackOverlay(current, total, command) {
@@ -272,9 +349,11 @@
   function showPlaybackError(errorMessage) {
     const errorBox = document.getElementById('mkp-error-box');
     const errorText = document.getElementById('mkp-error-text');
+    const actionsBox = document.getElementById('mkp-playback-actions-box');
 
     if (errorBox) errorBox.style.display = 'block';
     if (errorText) errorText.textContent = errorMessage;
+    if (actionsBox) actionsBox.style.display = 'none';
 
     // Return a promise that resolves when user clicks a button
     return new Promise((resolve) => {
@@ -284,7 +363,9 @@
 
   function hidePlaybackError() {
     const errorBox = document.getElementById('mkp-error-box');
+    const actionsBox = document.getElementById('mkp-playback-actions-box');
     if (errorBox) errorBox.style.display = 'none';
+    if (actionsBox) actionsBox.style.display = 'block';
     skipResolve = null;
   }
 
@@ -366,23 +447,32 @@
       /* Playback Overlay */
       #mkp-playback-overlay {
         position: fixed;
-        bottom: 20px;
+        top: 20px;
         right: 20px;
-        z-index: 2147483647;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        animation: mkp-slide-up 0.3s ease-out;
+        z-index: 10000;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        width: 350px;
+        min-height: 180px;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+      }
+      animation: mkp-slide-up 0.3s ease-out;
       }
       @keyframes mkp-slide-up {
         from { transform: translateY(100px); opacity: 0; }
         to { transform: translateY(0); opacity: 1; }
       }
       .mkp-playback-inner {
-        background: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-        min-width: 320px;
-        max-width: 400px;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: 180px;
+        flex: 1;
         overflow: hidden;
       }
       .mkp-playback-header {
@@ -409,8 +499,42 @@
         font-size: 12px;
         font-weight: 600;
       }
+      .mkp-playback-actions-box {
+        margin: 0;
+        min-width: 0;
+        flex-shrink: 1;
+        display: flex;
+        align-items: center;
+        height: 24px;
+        gap: 4px;
+        margin-left: 8px;
+      }
+      .mkp-playback-content {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      
       .mkp-playback-info {
         padding: 16px;
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        box-sizing: border-box;
+        overflow: hidden;
+      }
+      .mkp-step-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+        width: 100%;
+        min-width: 0;
+        height: 32px;
+        flex-shrink: 0;
       }
       .mkp-step-label {
         font-size: 10px;
@@ -418,7 +542,12 @@
         color: #94a3b8;
         text-transform: uppercase;
         letter-spacing: 0.5px;
-        margin-bottom: 6px;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        height: 24px;
+        white-space: nowrap;
+        padding-right: 8px;
       }
       .mkp-step-command {
         display: inline-block;
@@ -429,17 +558,24 @@
         font-size: 13px;
         font-weight: 600;
         text-transform: uppercase;
-        margin-bottom: 8px;
+        margin: 8px 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex-shrink: 0;
       }
       .mkp-step-target {
         font-size: 12px;
         color: #64748b;
-        font-family: 'Monaco', 'Menlo', monospace;
-        word-break: break-all;
-        background: #f8fafc;
-        padding: 8px 10px;
-        border-radius: 6px;
-        border: 1px solid #e2e8f0;
+        word-break: break-word;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        flex-shrink: 0;
+        margin: 0;
+        line-height: 1.4;
       }
       .mkp-playback-error {
         padding: 16px;
@@ -454,17 +590,45 @@
       }
       .mkp-error-actions {
         display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
+        gap: 6px; /* Réduit légèrement l'espacement entre les boutons */
+        flex-wrap: nowrap;
+        justify-content: flex-end;
+        min-width: 0; /* Permet au conteneur de rétrécir si nécessaire */
       }
       .mkp-btn {
-        padding: 8px 14px;
+        padding: 4px 8px;
         border: none;
-        border-radius: 6px;
-        font-size: 12px;
+        border-radius: 4px;
+        font-size: 11px;
         font-weight: 600;
         cursor: pointer;
         transition: all 0.2s;
+        white-space: nowrap;
+        flex-shrink: 0;
+        height: 24px;
+        display: inline-flex;
+        align-items: center;
+      }
+      .mkp-btn-pause {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .mkp-btn-icon {
+        width: 16px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #mkp-playback-overlay.mkp-paused .mkp-playback-header {
+        background: #fff7ed;
+      }
+      #mkp-playback-overlay.mkp-paused .mkp-play-pulse {
+        background: #94a3b8;
+        animation: none;
+      }
+      #mkp-playback-overlay.mkp-paused .mkp-playback-progress {
+        background: #94a3b8;
       }
       .mkp-btn-skip {
         background: #f59e0b;
@@ -616,6 +780,12 @@
         break;
       case 'SHOW_PLAYBACK_OVERLAY':
         createPlaybackOverlay();
+        chrome.runtime.sendMessage({ type: 'GET_PLAYBACK_STATE' }, (response) => {
+          if (response && response.state && response.state.status) {
+            if (response.state.status === 'paused') setPlaybackUiStatus('paused');
+            else if (response.state.status === 'playing') setPlaybackUiStatus('playing');
+          }
+        });
         sendResponse({ success: true });
         break;
       case 'HIDE_PLAYBACK_OVERLAY':
@@ -624,6 +794,12 @@
         break;
       case 'UPDATE_PLAYBACK_OVERLAY':
         updatePlaybackOverlay(message.current, message.total, message.command);
+        sendResponse({ success: true });
+        break;
+      case 'SET_PLAYBACK_UI_STATE':
+        try {
+          if (message.status) setPlaybackUiStatus(message.status);
+        } catch (e) {}
         sendResponse({ success: true });
         break;
       case 'SHOW_PLAYBACK_ERROR':

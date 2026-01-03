@@ -16,6 +16,7 @@ let recordingTabId = null;
 let lastCommandTime = null;
 
 let isPlaying = false;
+let playbackTabId = null;
 let playbackState = {
   currentIndex: 0,
   scenarioIndex: 0,
@@ -33,6 +34,7 @@ async function saveState() {
       recordingTabId,
       currentScenario,
       isPlaying,
+      playbackTabId,
       playbackState,
       lastCommandTime
     }
@@ -47,6 +49,7 @@ async function loadState() {
     recordingTabId = state.recordingTabId || null;
     currentScenario = state.currentScenario || createEmptyScenario();
     isPlaying = state.isPlaying || false;
+    playbackTabId = state.playbackTabId || null;
     playbackState = state.playbackState || { currentIndex: 0, status: 'idle', error: null };
     lastCommandTime = state.lastCommandTime || null;
     
@@ -81,11 +84,32 @@ function updateBadge() {
   if (isRecording) {
     chrome.action.setBadgeText({ text: 'REC' });
     chrome.action.setBadgeBackgroundColor({ color: '#ef4444' });
+  } else if (isPlaying && playbackState.status === 'paused') {
+    chrome.action.setBadgeText({ text: '⏸' });
+    chrome.action.setBadgeBackgroundColor({ color: '#94a3b8' });
   } else if (isPlaying) {
     chrome.action.setBadgeText({ text: '▶' });
     chrome.action.setBadgeBackgroundColor({ color: '#6366f1' });
   } else {
     chrome.action.setBadgeText({ text: '' });
+  }
+}
+
+async function notifyPlaybackUiState(status) {
+  if (!playbackTabId) return;
+  try {
+    await chrome.tabs.sendMessage(playbackTabId, { type: 'SET_PLAYBACK_UI_STATE', status });
+  } catch (e) {
+    console.log('Error notifying playback UI state:', e);
+  }
+}
+
+async function hidePlaybackOverlay() {
+  if (!playbackTabId) return;
+  try {
+    await chrome.tabs.sendMessage(playbackTabId, { type: 'HIDE_PLAYBACK_OVERLAY' });
+  } catch (e) {
+    console.log('Error hiding playback overlay:', e);
   }
 }
 
@@ -164,10 +188,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
 
     case 'STOP_PLAYBACK':
+      if (!playbackTabId && sender && sender.tab && sender.tab.id) {
+        playbackTabId = sender.tab.id;
+      }
       isPlaying = false;
       playbackState.status = 'stopped';
+      playbackState.error = null;
+      playbackState.currentIndex = 0;
+      playbackState.scenarioIndex = 0;
+      playbackState.total = 0;
       updateBadge();
+      notifyPlaybackUiState('stopped');
+      hidePlaybackOverlay();
+      playbackTabId = null;
       saveState();
+      sendResponse({ success: true });
+      break;
+
+    case 'PAUSE_PLAYBACK':
+      if (!playbackTabId && sender && sender.tab && sender.tab.id) {
+        playbackTabId = sender.tab.id;
+      }
+      if (isPlaying) {
+        playbackState.status = 'paused';
+        updateBadge();
+        saveState();
+        notifyPlaybackUiState('paused');
+      }
+      sendResponse({ success: true });
+      break;
+
+    case 'RESUME_PLAYBACK':
+      if (!playbackTabId && sender && sender.tab && sender.tab.id) {
+        playbackTabId = sender.tab.id;
+      }
+      if (isPlaying) {
+        playbackState.status = 'playing';
+        updateBadge();
+        saveState();
+        notifyPlaybackUiState('playing');
+      }
       sendResponse({ success: true });
       break;
 
@@ -208,6 +268,21 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       await chrome.tabs.sendMessage(tabId, { type: 'SHOW_RECORDING_INDICATOR' });
     } catch (e) {
       console.log('Error re-injecting on tab update:', e);
+    }
+  }
+
+  if (isPlaying && tabId === playbackTabId && changeInfo.status === 'complete') {
+    console.log('Tab updated while playing, re-injecting content script + overlay');
+    try {
+      await new Promise(r => setTimeout(r, 300));
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        files: ['src/content_script.js']
+      });
+      await chrome.tabs.sendMessage(tabId, { type: 'SHOW_PLAYBACK_OVERLAY' });
+      await notifyPlaybackUiState(playbackState.status || 'playing');
+    } catch (e) {
+      console.log('Error re-injecting playback overlay on tab update:', e);
     }
   }
 });
@@ -295,6 +370,7 @@ async function handlePlayScenario(tabId, useRealTiming = true) {
   }
 
   isPlaying = true;
+  playbackTabId = tabId;
   playbackState = {
     currentIndex: 0,
     scenarioIndex: 0,
@@ -333,6 +409,7 @@ async function handlePlayScenario(tabId, useRealTiming = true) {
   }
   
   isPlaying = false;
+  playbackTabId = null;
   updateBadge();
   await saveState();
 }
@@ -350,6 +427,7 @@ async function handlePlayGroup(scenarios, tabId, useRealTiming = true) {
   }
 
   isPlaying = true;
+  playbackTabId = tabId;
   playbackState = {
     currentIndex: 0,
     scenarioIndex: 0,
@@ -405,7 +483,17 @@ async function handlePlayGroup(scenarios, tabId, useRealTiming = true) {
     }
 
     if (i < scenarios.length - 1) {
-      await new Promise(r => setTimeout(r, 500));
+      let remaining = 500;
+      while (remaining > 0) {
+        if (!isPlaying) break;
+        if (playbackState.status === 'paused') {
+          await new Promise(r => setTimeout(r, 200));
+          continue;
+        }
+        const chunk = Math.min(remaining, 200);
+        await new Promise(r => setTimeout(r, chunk));
+        remaining -= chunk;
+      }
     }
   }
 
@@ -422,11 +510,33 @@ async function handlePlayGroup(scenarios, tabId, useRealTiming = true) {
   }
 
   isPlaying = false;
+  playbackTabId = null;
   updateBadge();
   await saveState();
 }
 
 async function executeScenario(scenario, tabId, useRealTiming) {
+  const waitIfPaused = async () => {
+    while (isPlaying && playbackState.status === 'paused') {
+      await new Promise(r => setTimeout(r, 200));
+    }
+  };
+
+  const controlledDelay = async (ms) => {
+    let remaining = ms;
+    while (remaining > 0) {
+      if (!isPlaying) return false;
+      if (playbackState.status === 'paused') {
+        await waitIfPaused();
+        continue;
+      }
+      const chunk = Math.min(remaining, 200);
+      await new Promise(r => setTimeout(r, chunk));
+      remaining -= chunk;
+    }
+    return true;
+  };
+
   // Inject content script
   try {
     await chrome.scripting.executeScript({
@@ -440,6 +550,12 @@ async function executeScenario(scenario, tabId, useRealTiming) {
   for (let i = 0; i < scenario.Commands.length; i++) {
     if (!isPlaying) {
       console.log('Playback stopped by user');
+      playbackState.status = 'stopped';
+      return false;
+    }
+
+    await waitIfPaused();
+    if (!isPlaying) {
       playbackState.status = 'stopped';
       return false;
     }
@@ -473,7 +589,11 @@ async function executeScenario(scenario, tabId, useRealTiming) {
     if (useRealTiming && cmd.timing && cmd.timing > 0 && i > 0) {
       const delay = Math.min(cmd.timing, 10000);
       console.log(`Waiting ${delay}ms (real timing)`);
-      await new Promise(r => setTimeout(r, delay));
+      const ok = await controlledDelay(delay);
+      if (!ok) {
+        playbackState.status = 'stopped';
+        return false;
+      }
     }
 
     let retryCommand = true;
@@ -481,6 +601,11 @@ async function executeScenario(scenario, tabId, useRealTiming) {
       retryCommand = false;
 
       try {
+        await waitIfPaused();
+        if (!isPlaying) {
+          playbackState.status = 'stopped';
+          return false;
+        }
         // Handle 'open' command
         if (cmd.Command && cmd.Command.toLowerCase() === 'open') {
           const url = cmd.Target;
@@ -489,7 +614,11 @@ async function executeScenario(scenario, tabId, useRealTiming) {
             await chrome.tabs.update(tabId, { url: url });
             await waitForPageLoad(tabId);
             
-            await new Promise(r => setTimeout(r, 500));
+            const ok = await controlledDelay(500);
+            if (!ok) {
+              playbackState.status = 'stopped';
+              return false;
+            }
             try {
               await chrome.scripting.executeScript({
                 target: { tabId: tabId },
@@ -507,7 +636,11 @@ async function executeScenario(scenario, tabId, useRealTiming) {
         if (cmd.Command && cmd.Command.toLowerCase() === 'pause') {
           const pauseTime = parseInt(cmd.Target) || parseInt(cmd.Value) || 1000;
           console.log(`Pausing for ${pauseTime}ms`);
-          await new Promise(r => setTimeout(r, pauseTime));
+          const ok = await controlledDelay(pauseTime);
+          if (!ok) {
+            playbackState.status = 'stopped';
+            return false;
+          }
           continue;
         }
 
@@ -554,6 +687,9 @@ async function executeScenario(scenario, tabId, useRealTiming) {
             playbackState.error = `Arrêté à l'étape ${i + 1}`;
             isPlaying = false;
             updateBadge();
+            await notifyPlaybackUiState('stopped');
+            await hidePlaybackOverlay();
+            playbackTabId = null;
             await saveState();
             return false;
           }
@@ -572,7 +708,11 @@ async function executeScenario(scenario, tabId, useRealTiming) {
 
     // Minimum delay between commands
     if (!useRealTiming || !cmd.timing) {
-      await new Promise(r => setTimeout(r, 200));
+      const ok = await controlledDelay(200);
+      if (!ok) {
+        playbackState.status = 'stopped';
+        return false;
+      }
     }
   }
 
