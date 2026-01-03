@@ -491,12 +491,50 @@ function clearCommandHighlight() {
 // ==================== TOGGLE COMMAND (DISABLE/ENABLE) ====================
 
 function toggleCommand(index) {
+  // Sauvegarder la position de défilement actuelle
+  const commandsList = document.getElementById('commandsList');
+  const scrollPosition = commandsList.scrollTop;
+  const commandElement = commandsList.querySelector(`[data-index="${index}"]`);
+  const commandRect = commandElement ? commandElement.getBoundingClientRect() : null;
+  const commandsListRect = commandsList.getBoundingClientRect();
+  const isCommandInView = commandRect && (
+    commandRect.top >= commandsListRect.top &&
+    commandRect.bottom <= commandsListRect.bottom
+  );
+
+  // Basculer l'état de la commande
   const cmd = state.currentScenario.Commands[index];
   if (!cmd) return;
   
   cmd.disabled = !cmd.disabled;
-  renderCommands();
+  
+  // Sauvegarder les changements
   syncToBackground();
+  
+  // Mettre à jour l'interface utilisateur
+  renderCommands();
+
+  // Restaurer la position de défilement si nécessaire
+  if (isCommandInView) {
+    // Attendre que le rendu soit terminé
+    setTimeout(() => {
+      const newCommandElement = commandsList.querySelector(`[data-index="${index}"]`);
+      if (newCommandElement) {
+        // Vérifier si l'élément est toujours visible après le rendu
+        const newCommandRect = newCommandElement.getBoundingClientRect();
+        const newCommandsListRect = commandsList.getBoundingClientRect();
+        
+        if (newCommandRect.top < newCommandsListRect.top || 
+            newCommandRect.bottom > newCommandsListRect.bottom) {
+          // Faire défiler pour ramener l'élément en vue si nécessaire
+          newCommandElement.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+        }
+      }
+    }, 0);
+  } else {
+    // Si l'élément n'était pas visible, restaurer simplement la position de défilement
+    commandsList.scrollTop = scrollPosition;
+  }
 }
 
 // ==================== EDIT COMMAND ====================
