@@ -957,35 +957,42 @@ function renderGroupItem(group, level = 0) {
   
   // Compter les scénarios dans ce groupe et ses sous-groupes
   const scenarioCount = state.scenarios.filter(s => s.groupId === group.id).length;
+  const isRootFolder = !group.parentId;
   
   let html = `
     <div class="group-item ${isGroupFolder ? 'folder' : ''}" data-id="${group.id}" data-level="${level}">
       <div class="group-item-header">
-        ${hasChildren ? `
-          <button class="toggle-folder" data-id="${group.id}">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="${isExpanded ? '18 15 12 9 6 15' : '9 18 15 12 9 6'}"></polyline>
-            </svg>
-          </button>
-        ` : '<span class="toggle-spacer"></span>'}
+        <div style="display: flex; align-items: center; flex-grow: 1;">
+          ${hasChildren ? `
+            <button class="toggle-folder" data-id="${group.id}" style="margin-right: 8px;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="${isExpanded ? '18 15 12 9 6 15' : '9 18 15 12 9 6'}"></polyline>
+              </svg>
+            </button>
+          ` : '<div style="width: 20px;"></div>'}
+          
+          <span class="group-name">${escapeHtml(group.name)}</span>
+          <span class="group-scenario-count">${scenarioCount}</span>
+        </div>
         
-        <span class="group-name">${escapeHtml(group.name)}</span>
-        <span class="group-scenario-count">${scenarioCount}</span>
-        
-        <div class="group-actions">
-          ${isGroupFolder ? `
-            <button class="cmd-icon-btn btn-play-group" data-id="${group.id}" title="Lire le dossier">
+        <div class="group-actions" style="display: flex; gap: 4px;">
+          ${isRootFolder ? `
+            <button class="cmd-icon-btn btn-play-group" data-id="${group.id}" title="Lancer tous les scénarios de ${escapeHtml(group.name)}" style="color: var(--success);">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
               </svg>
             </button>
           ` : ''}
-          <button class="cmd-icon-btn btn-add-subgroup" data-parent-id="${group.id}" title="Ajouter un sous-groupe">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-          </button>
+          
+          ${isGroupFolder ? `
+            <button class="cmd-icon-btn btn-add-subgroup" data-parent-id="${group.id}" title="Ajouter un sous-groupe">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            </button>
+          ` : ''}
+          
           <button class="cmd-icon-btn btn-rename-group" data-id="${group.id}" title="Renommer">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 20h9"></path>
@@ -1352,16 +1359,49 @@ function updateGroupSelects() {
 
 function openGroupPlayModal(groupId) {
   state.playingGroupId = groupId;
-  const groupScenarios = state.scenarios.filter(s => s.groupId === groupId);
   
-  if (groupScenarios.length === 0) return;
+  // Fonction récursive pour collecter tous les scénarios du groupe et de ses sous-groupes
+  const collectScenarios = (id) => {
+    let scenarios = [];
+    
+    // Ajouter les scénarios du groupe actuel
+    scenarios.push(...state.scenarios.filter(s => s.groupId === id));
+    
+    // Trouver les sous-groupes
+    const childGroups = state.groups.filter(g => g.parentId === id);
+    
+    // Parcourir récursivement les sous-groupes
+    for (const childGroup of childGroups) {
+      scenarios.push(...collectScenarios(childGroup.id));
+    }
+    
+    return scenarios;
+  };
+  
+  const groupScenarios = collectScenarios(groupId);
+  
+  if (groupScenarios.length === 0) {
+    showNotification('Aucun scénario trouvé dans ce dossier', 'warning');
+    return;
+  }
 
+  // Trier les scénarios par nom
+  groupScenarios.sort((a, b) => a.Name.localeCompare(b.Name));
+  
   elements.groupScenariosList.innerHTML = groupScenarios.map(s => {
-    const activeCount = s.Commands.filter(c => !c.disabled).length;
+    const activeCount = s.Commands ? s.Commands.filter(c => !c.disabled).length : 0;
+    const group = state.groups.find(g => g.id === s.groupId);
+    const groupName = group ? group.name : 'Sans groupe';
+    
     return `
       <div class="scenario-check-item">
         <input type="checkbox" id="check-${s.id}" data-id="${s.id}" checked>
-        <label for="check-${s.id}">${escapeHtml(s.Name)} (${activeCount} actions actives)</label>
+        <label for="check-${s.id}">
+          ${escapeHtml(s.Name)} 
+          <span class="scenario-meta">
+            (${activeCount} actions actives, groupe: ${escapeHtml(groupName)})
+          </span>
+        </label>
       </div>
     `;
   }).join('');
