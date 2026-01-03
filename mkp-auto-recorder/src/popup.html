@@ -5,6 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MKP Auto Recorder</title>
   <link rel="stylesheet" href="styles.css">
+  <style>
+    .version-badge {
+      font-size: 10px;
+      font-weight: 500;
+      background: rgba(0, 0, 0, 0.1);
+      color: #4a5568;
+      padding: 2px 6px;
+      border-radius: 4px;
+      letter-spacing: 0.3px;
+      line-height: 1.2;
+      margin-left: 4px;
+    }
+  </style>
 </head>
 <body>
   <div class="app-container">
@@ -12,7 +25,7 @@
     <header class="app-header">
       <div class="logo">
         <span class="logo-icon">⚡</span>
-        <span class="logo-text">MKP Recorder</span>
+        <span class="logo-text">MKP Recorder<span class="version-badge" id="version-badge">v2.1.0</span></span>
       </div>
       <div class="header-actions">
         <button class="icon-btn" id="btnSidePanel" title="Ouvrir le panneau latéral">

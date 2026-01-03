@@ -1594,8 +1594,13 @@ if (elements.btnRestoreBackup) {
       });
 
       await loadData();
+      await loadRecordingState();
       refreshScenariosList();
       refreshGroupsList();
+      updateUIState();
+      
+      // Afficher la version du plugin
+      displayVersion();
 
       try {
         await chrome.runtime.sendMessage({ type: 'RELOAD_STATE' });
@@ -1823,9 +1828,35 @@ async function createGroup(name, parentId = null, isFolder = false) {
   return newGroup;
 }
 
+// ==================== VERSION ====================
+
+// Afficher la version du plugin
+function displayVersion() {
+  try {
+    console.log('Affichage de la version...');
+    const manifest = chrome.runtime.getManifest();
+    console.log('Manifest:', manifest);
+    const version = manifest.version;
+    const versionBadge = document.getElementById('version-badge');
+    console.log('Version badge element:', versionBadge);
+    if (versionBadge) {
+      versionBadge.textContent = `v${version}`;
+      console.log('Version affichée avec succès');
+    } else {
+      console.error('Élément version-badge introuvable');
+    }
+  } catch (error) {
+    console.error('Erreur lors de l\'affichage de la version:', error);
+  }
+}
+
 // ==================== INIT ====================
 
 async function init() {
+  // Afficher la version du plugin en premier
+  console.log('Initialisation de la popup...');
+  displayVersion();
+  
   // Initialiser l'état des groupes dépliés
   state.expandedGroups = state.expandedGroups || {};
   

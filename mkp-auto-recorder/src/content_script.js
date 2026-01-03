@@ -214,10 +214,10 @@
           </div>
           <span class="mkp-playback-progress" id="mkp-progress">0/0</span>
         </div>
-        <div class="mkp-playback-content">
-          <div class="mkp-playback-info">
-            <div class="mkp-step-header">
-              <div class="mkp-step-label">
+        <div class="mkp-playback-info">
+          <div class="mkp-step-header">
+            <div class="mkp-step-label">
+            
               <div class="mkp-playback-actions-box" id="mkp-playback-actions-box">
                 <div class="mkp-error-actions">
                   <button class="mkp-btn mkp-btn-retry mkp-btn-pause" id="mkp-btn-pause">
@@ -227,21 +227,21 @@
                   <button class="mkp-btn mkp-btn-stop" id="mkp-btn-stop-main">⏹ Arrêter</button>
                 </div>
               </div>
+            
             </div>
-              
-            </div>
-            <div class="mkp-step-command" id="mkp-step-command">-</div>
-            <div class="mkp-step-target" id="mkp-step-target">-</div>
+            
           </div>
-          <div class="mkp-playback-error" id="mkp-error-box" style="display: none;">
+          <div class="mkp-step-command" id="mkp-step-command">-</div>
+          <div class="mkp-step-target" id="mkp-step-target">-</div>
+        </div>
         <div class="mkp-playback-error" id="mkp-error-box" style="display: none;">
-            <div class="mkp-error-text" id="mkp-error-text"></div>
-            <div class="mkp-error-actions">
+          <div class="mkp-error-text" id="mkp-error-text"></div>
+          <div class="mkp-error-actions">
             <button class="mkp-btn mkp-btn-skip" id="mkp-btn-skip">⏭ Passer cette étape</button>
-              <button class="mkp-btn mkp-btn-retry" id="mkp-btn-retry">🔄 Réessayer</button>
-              <button class="mkp-btn mkp-btn-stop" id="mkp-btn-stop">⏹ Arrêter</button>
-            </div>
+            <button class="mkp-btn mkp-btn-retry" id="mkp-btn-retry">🔄 Réessayer</button>
+            <button class="mkp-btn mkp-btn-stop" id="mkp-btn-stop">⏹ Arrêter</button>
           </div>
+        </div>
       </div>
     `;
 
@@ -447,32 +447,23 @@
       /* Playback Overlay */
       #mkp-playback-overlay {
         position: fixed;
-        top: 20px;
+        bottom: 20px;
         right: 20px;
-        z-index: 10000;
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        overflow: hidden;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-        width: 350px;
-        min-height: 180px;
-        max-height: 90vh;
-        display: flex;
-        flex-direction: column;
-      }
-      animation: mkp-slide-up 0.3s ease-out;
+        z-index: 2147483647;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        animation: mkp-slide-up 0.3s ease-out;
       }
       @keyframes mkp-slide-up {
         from { transform: translateY(100px); opacity: 0; }
         to { transform: translateY(0); opacity: 1; }
       }
       .mkp-playback-inner {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-        min-height: 180px;
-        flex: 1;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+        min-width: 320px;
+        max-width: 400px;
         overflow: hidden;
       }
       .mkp-playback-header {
@@ -509,22 +500,8 @@
         gap: 4px;
         margin-left: 8px;
       }
-      .mkp-playback-content {
-        flex: 1;
-        min-height: 0;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-      }
-      
       .mkp-playback-info {
         padding: 16px;
-        flex: 1;
-        min-height: 0;
-        display: flex;
-        flex-direction: column;
-        box-sizing: border-box;
-        overflow: hidden;
       }
       .mkp-step-header {
         display: flex;
@@ -533,8 +510,7 @@
         margin-bottom: 8px;
         width: 100%;
         min-width: 0;
-        height: 32px;
-        flex-shrink: 0;
+        height: 32px; /* Hauteur fixe pour tout le conteneur */
       }
       .mkp-step-label {
         font-size: 10px;
@@ -558,24 +534,17 @@
         font-size: 13px;
         font-weight: 600;
         text-transform: uppercase;
-        margin: 8px 0;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        flex-shrink: 0;
+        margin-bottom: 8px;
       }
       .mkp-step-target {
         font-size: 12px;
         color: #64748b;
-        word-break: break-word;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        flex-shrink: 0;
-        margin: 0;
-        line-height: 1.4;
+        font-family: 'Monaco', 'Menlo', monospace;
+        word-break: break-all;
+        background: #f8fafc;
+        padding: 8px 10px;
+        border-radius: 6px;
+        border: 1px solid #e2e8f0;
       }
       .mkp-playback-error {
         padding: 16px;

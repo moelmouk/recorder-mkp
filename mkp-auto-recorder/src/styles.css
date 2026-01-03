@@ -90,6 +90,9 @@ body {
   font-size: 18px;
   font-weight: 700;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .icon-btn {
