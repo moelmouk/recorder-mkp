@@ -669,6 +669,12 @@ function refreshScenariosList() {
               <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
             </svg>
           </button>
+          <button class="cmd-icon-btn btn-duplicate-scenario" data-id="${scenario.id}" title="Dupliquer" aria-label="Dupliquer">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+          </button>
           <button class="cmd-icon-btn btn-export" data-id="${scenario.id}" title="Exporter" aria-label="Exporter">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -705,8 +711,18 @@ function refreshScenariosList() {
     btn.addEventListener('click', () => exportScenario(btn.dataset.id));
   });
 
+  elements.scenariosList.querySelectorAll('.btn-duplicate-scenario').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      duplicateScenario(btn.dataset.id);
+    });
+  });
+
   elements.scenariosList.querySelectorAll('.btn-delete-scenario').forEach(btn => {
-    btn.addEventListener('click', () => deleteScenario(btn.dataset.id));
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteScenario(btn.dataset.id);
+    });
   });
 }
 
@@ -746,6 +762,29 @@ async function deleteScenario(id) {
   state.scenarios = state.scenarios.filter(s => s.id !== id);
   await saveData();
   refreshScenariosList();
+}
+
+// ==================== DUPLICATE SCENARIO ====================
+
+async function duplicateScenario(id) {
+  const scenario = state.scenarios.find(s => s.id === id);
+  if (!scenario) return;
+  
+  // Créer une copie profonde du scénario
+  const newScenario = JSON.parse(JSON.stringify(scenario));
+  
+  // Générer un nouvel ID et mettre à jour le nom
+  newScenario.id = generateId();
+  newScenario.Name = `${scenario.Name} (copie)`;
+  newScenario.CreationDate = new Date().toISOString().split('T')[0];
+  
+  // Ajouter le nouveau scénario
+  state.scenarios.push(newScenario);
+  await saveData();
+  
+  // Mettre à jour l'interface
+  refreshScenariosList();
+  showToast('Scénario dupliqué avec succès', 'success');
 }
 
 // ==================== EDIT SCENARIO (REASSIGN GROUP) ====================
