@@ -22,8 +22,12 @@ let playbackState = {
   scenarioIndex: 0,
   status: 'idle',
   error: null,
-  total: 0
+  total: 0,
+  errorIndexes: []
 };
+
+let eventLogs = [];
+const MAX_EVENT_LOGS = 500;
 
 // ========== STATE PERSISTENCE ==========
 
@@ -41,8 +45,32 @@ async function saveState() {
   });
 }
 
+async function saveLogs() {
+  await chrome.storage.local.set({ mkpEventLogs: eventLogs });
+}
+
+function appendLog(entry) {
+  const e = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+    ts: Date.now(),
+    level: entry && entry.level ? entry.level : 'info',
+    category: entry && entry.category ? entry.category : 'general',
+    action: entry && entry.action ? entry.action : '',
+    message: entry && entry.message ? entry.message : '',
+    data: entry && entry.data ? entry.data : null
+  };
+  eventLogs.push(e);
+  if (eventLogs.length > MAX_EVENT_LOGS) {
+    eventLogs = eventLogs.slice(eventLogs.length - MAX_EVENT_LOGS);
+  }
+  saveLogs().catch(() => {});
+}
+
 async function loadState() {
-  const result = await chrome.storage.local.get('mkpRecorderState');
+  const result = await chrome.storage.local.get(['mkpRecorderState', 'mkpEventLogs']);
+  if (Array.isArray(result.mkpEventLogs)) {
+    eventLogs = result.mkpEventLogs;
+  }
   if (result.mkpRecorderState) {
     const state = result.mkpRecorderState;
     isRecording = state.isRecording || false;
@@ -50,7 +78,8 @@ async function loadState() {
     currentScenario = state.currentScenario || createEmptyScenario();
     isPlaying = state.isPlaying || false;
     playbackTabId = state.playbackTabId || null;
-    playbackState = state.playbackState || { currentIndex: 0, status: 'idle', error: null };
+    playbackState = state.playbackState || { currentIndex: 0, scenarioIndex: 0, status: 'idle', error: null, total: 0, errorIndexes: [] };
+    if (!Array.isArray(playbackState.errorIndexes)) playbackState.errorIndexes = [];
     lastCommandTime = state.lastCommandTime || null;
     
     updateBadge();
@@ -130,11 +159,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
 
     case 'START_RECORDING':
+      appendLog({
+        level: 'info',
+        category: 'recording',
+        action: 'start',
+        message: 'Démarrage enregistrement',
+        data: { tabId: message.tabId || (sender.tab ? sender.tab.id : null) }
+      });
       handleStartRecording(message.tabId || (sender.tab ? sender.tab.id : null));
       sendResponse({ success: true });
       break;
 
     case 'STOP_RECORDING':
+      appendLog({
+        level: 'info',
+        category: 'recording',
+        action: 'stop',
+        message: 'Arrêt enregistrement',
+        data: { tabId: message.tabId || (sender.tab ? sender.tab.id : null) }
+      });
       handleStopRecording(message.tabId || (sender.tab ? sender.tab.id : null));
       sendResponse({ success: true });
       break;
@@ -153,6 +196,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       
       currentScenario.Commands.push(commandWithTiming);
       saveState();
+      appendLog({
+        level: 'info',
+        category: 'recording',
+        action: 'command_recorded',
+        message: 'Action enregistrée',
+        data: { command: commandWithTiming.Command, target: commandWithTiming.Target, timing: commandWithTiming.timing }
+      });
       sendResponse({ success: true });
       break;
 
@@ -170,6 +220,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       currentScenario = createEmptyScenario();
       lastCommandTime = null;
       saveState();
+      appendLog({ level: 'info', category: 'scenario', action: 'clear', message: 'Scénario effacé' });
       sendResponse({ success: true });
       break;
 
@@ -178,16 +229,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
 
     case 'PLAY_SCENARIO':
+      appendLog({
+        level: 'info',
+        category: 'playback',
+        action: 'play_scenario',
+        message: 'Lecture scénario',
+        data: { tabId: message.tabId, useRealTiming: message.useRealTiming !== false }
+      });
       handlePlayScenario(message.tabId, message.useRealTiming !== false);
       sendResponse({ success: true });
       break;
 
     case 'PLAY_GROUP':
+      appendLog({
+        level: 'info',
+        category: 'playback',
+        action: 'play_group',
+        message: 'Lecture groupe',
+        data: { tabId: message.tabId, count: Array.isArray(message.scenarios) ? message.scenarios.length : 0, useRealTiming: message.useRealTiming !== false }
+      });
       handlePlayGroup(message.scenarios, message.tabId, message.useRealTiming !== false);
       sendResponse({ success: true });
       break;
 
     case 'STOP_PLAYBACK':
+      appendLog({ level: 'info', category: 'playback', action: 'stop', message: 'Arrêt lecture' });
       if (!playbackTabId && sender && sender.tab && sender.tab.id) {
         playbackTabId = sender.tab.id;
       }
@@ -197,6 +263,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       playbackState.currentIndex = 0;
       playbackState.scenarioIndex = 0;
       playbackState.total = 0;
+      playbackState.errorIndexes = [];
       updateBadge();
       notifyPlaybackUiState('stopped');
       hidePlaybackOverlay();
@@ -206,6 +273,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
 
     case 'PAUSE_PLAYBACK':
+      appendLog({ level: 'info', category: 'playback', action: 'pause', message: 'Pause lecture' });
       if (!playbackTabId && sender && sender.tab && sender.tab.id) {
         playbackTabId = sender.tab.id;
       }
@@ -219,6 +287,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
 
     case 'RESUME_PLAYBACK':
+      appendLog({ level: 'info', category: 'playback', action: 'resume', message: 'Reprise lecture' });
       if (!playbackTabId && sender && sender.tab && sender.tab.id) {
         playbackTabId = sender.tab.id;
       }
@@ -228,6 +297,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         saveState();
         notifyPlaybackUiState('playing');
       }
+      sendResponse({ success: true });
+      break;
+
+    case 'LOG_EVENT':
+      appendLog({
+        level: message.level || 'info',
+        category: message.category || 'general',
+        action: message.action || '',
+        message: message.message || '',
+        data: message.data || null
+      });
+      sendResponse({ success: true });
+      break;
+
+    case 'GET_LOGS':
+      sendResponse({ logs: eventLogs });
+      break;
+
+    case 'CLEAR_LOGS':
+      eventLogs = [];
+      saveLogs().catch(() => {});
       sendResponse({ success: true });
       break;
 
@@ -290,6 +380,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (isRecording && tabId === recordingTabId) {
     console.log('Recording tab closed, stopping recording');
+    appendLog({ level: 'warn', category: 'recording', action: 'tab_closed', message: 'Onglet d’enregistrement fermé, arrêt automatique', data: { tabId } });
     isRecording = false;
     recordingTabId = null;
     updateBadge();
@@ -366,6 +457,13 @@ async function handlePlayScenario(tabId, useRealTiming = true) {
     console.log('No active commands to play');
     playbackState.status = 'error';
     playbackState.error = 'Aucune commande active à jouer';
+    appendLog({
+      level: 'error',
+      category: 'playback',
+      action: 'play_scenario',
+      message: 'Lecture impossible: aucune commande active',
+      data: { tabId }
+    });
     return;
   }
 
@@ -376,7 +474,8 @@ async function handlePlayScenario(tabId, useRealTiming = true) {
     scenarioIndex: 0,
     status: 'playing',
     error: null,
-    total: activeCommands.length
+    total: activeCommands.length,
+    errorIndexes: []
   };
 
   updateBadge();
@@ -407,6 +506,14 @@ async function handlePlayScenario(tabId, useRealTiming = true) {
     playbackState.status = 'completed';
     console.log('Playback completed successfully');
   }
+
+  if (playbackState.status === 'completed') {
+    appendLog({ level: 'success', category: 'playback', action: 'completed', message: 'Lecture terminée' });
+  } else if (playbackState.status === 'error') {
+    appendLog({ level: 'error', category: 'playback', action: 'error', message: playbackState.error || 'Erreur lecture' });
+  } else if (playbackState.status === 'stopped') {
+    appendLog({ level: 'warn', category: 'playback', action: 'stopped', message: playbackState.error || 'Lecture arrêtée' });
+  }
   
   isPlaying = false;
   playbackTabId = null;
@@ -423,6 +530,7 @@ async function handlePlayGroup(scenarios, tabId, useRealTiming = true) {
   if (!scenarios || scenarios.length === 0) {
     playbackState.status = 'error';
     playbackState.error = 'Aucun scénario à jouer';
+    appendLog({ level: 'error', category: 'playback', action: 'play_group', message: 'Lecture groupe impossible: aucun scénario', data: { tabId } });
     return;
   }
 
@@ -433,7 +541,8 @@ async function handlePlayGroup(scenarios, tabId, useRealTiming = true) {
     scenarioIndex: 0,
     status: 'playing',
     error: null,
-    total: 0
+    total: 0,
+    errorIndexes: []
   };
 
   updateBadge();
@@ -507,6 +616,14 @@ async function handlePlayGroup(scenarios, tabId, useRealTiming = true) {
   if (isPlaying && playbackState.status !== 'error') {
     playbackState.status = 'completed';
     console.log('Group playback completed');
+  }
+
+  if (playbackState.status === 'completed') {
+    appendLog({ level: 'success', category: 'playback', action: 'group_completed', message: 'Lecture groupe terminée' });
+  } else if (playbackState.status === 'error') {
+    appendLog({ level: 'error', category: 'playback', action: 'group_error', message: playbackState.error || 'Erreur lecture groupe' });
+  } else if (playbackState.status === 'stopped') {
+    appendLog({ level: 'warn', category: 'playback', action: 'group_stopped', message: playbackState.error || 'Lecture groupe arrêtée' });
   }
 
   isPlaying = false;
@@ -654,10 +771,29 @@ async function executeScenario(scenario, tabId, useRealTiming) {
           throw new Error(response.error || 'Command failed');
         }
 
+        if (Array.isArray(playbackState.errorIndexes) && playbackState.errorIndexes.includes(i)) {
+          playbackState.errorIndexes = playbackState.errorIndexes.filter(x => x !== i);
+          await saveState();
+        }
+
         console.log(`Command ${i + 1} completed successfully`);
 
       } catch (error) {
         console.error(`Error executing command ${i + 1}:`, error);
+
+        if (!Array.isArray(playbackState.errorIndexes)) playbackState.errorIndexes = [];
+        if (!playbackState.errorIndexes.includes(i)) {
+          playbackState.errorIndexes.push(i);
+          await saveState();
+        }
+
+        appendLog({
+          level: 'error',
+          category: 'playback',
+          action: 'step_error',
+          message: `Étape ${i + 1} échouée`,
+          data: { index: i, command: cmd.Command, target: cmd.Target, error: error.message || String(error) }
+        });
 
         // Show error and wait for user action
         try {
@@ -673,18 +809,21 @@ async function executeScenario(scenario, tabId, useRealTiming) {
             // Skip this command, continue with next
             console.log('User chose to skip');
             playbackState.status = 'playing';
+            appendLog({ level: 'warn', category: 'playback', action: 'skip_step', message: `Étape ${i + 1} ignorée`, data: { index: i } });
             await chrome.tabs.sendMessage(tabId, { type: 'HIDE_PLAYBACK_ERROR' });
             break; // Exit retry loop, continue to next command
           } else if (action === 'retry') {
             // Retry this command
             console.log('User chose to retry');
             retryCommand = true;
+            appendLog({ level: 'info', category: 'playback', action: 'retry_step', message: `Retry étape ${i + 1}`, data: { index: i } });
             await chrome.tabs.sendMessage(tabId, { type: 'HIDE_PLAYBACK_ERROR' });
           } else if (action === 'stop') {
             // Stop playback
             console.log('User chose to stop');
             playbackState.status = 'stopped';
             playbackState.error = `Arrêté à l'étape ${i + 1}`;
+            appendLog({ level: 'warn', category: 'playback', action: 'stop_on_error', message: playbackState.error, data: { index: i } });
             isPlaying = false;
             updateBadge();
             await notifyPlaybackUiState('stopped');
@@ -698,6 +837,7 @@ async function executeScenario(scenario, tabId, useRealTiming) {
           console.error('Error showing error dialog:', e);
           playbackState.status = 'error';
           playbackState.error = `Étape ${i + 1} échouée: ${error.message || error}`;
+          appendLog({ level: 'error', category: 'playback', action: 'error_dialog_failed', message: playbackState.error, data: { index: i } });
           isPlaying = false;
           updateBadge();
           await saveState();

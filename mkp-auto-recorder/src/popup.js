@@ -76,7 +76,14 @@ const elements = {
   btnDownloadBackup: document.getElementById('btnDownloadBackup'),
   btnRestoreBackup: document.getElementById('btnRestoreBackup'),
   btnLoadBackupFile: document.getElementById('btnLoadBackupFile'),
-  backupFileInput: document.getElementById('backupFileInput')
+  backupFileInput: document.getElementById('backupFileInput'),
+
+  logLevelFilter: document.getElementById('logLevelFilter'),
+  logSearch: document.getElementById('logSearch'),
+  btnRefreshLogs: document.getElementById('btnRefreshLogs'),
+  btnExportLogs: document.getElementById('btnExportLogs'),
+  btnClearLogs: document.getElementById('btnClearLogs'),
+  logsList: document.getElementById('logsList')
 };
 
 // ==================== STATE ====================
@@ -94,7 +101,8 @@ const state = {
   },
   editingCommandIndex: -1,
   editingScenarioId: null,
-  playingGroupId: null
+  playingGroupId: null,
+  logs: []
 };
 
 function createEmptyScenario() {
@@ -125,8 +133,177 @@ elements.tabBtns.forEach(btn => {
     
     if (tabId === 'scenarios') refreshScenariosList();
     if (tabId === 'groups') refreshGroupsList();
+    if (tabId === 'logs') refreshLogs();
   });
 });
+
+async function logEvent({ level = 'info', category = 'general', action = '', message = '', data = null } = {}) {
+  try {
+    // Récupérer l'ID du scénario actif s'il existe
+    const scenarioData = {
+      scenarioId: state.currentScenario?.id || null,
+      scenarioName: state.currentScenario?.name || null,
+      scenarioGroup: state.currentScenario?.groupId ? 
+        (state.groups.find(g => g.id === state.currentScenario.groupId)?.name || state.currentScenario.groupId) : 
+        null
+    };
+
+    await chrome.runtime.sendMessage({
+      type: 'LOG_EVENT',
+      level,
+      category,
+      action,
+      message,
+      data: {
+        ...(data || {}),
+        _scenario: scenarioData.scenarioId ? scenarioData : undefined
+      }
+    });
+  } catch (e) {
+    console.error('Error logging event:', e);
+  }
+}
+
+function formatLogTs(ts) {
+  try {
+    return new Date(ts).toLocaleString('fr-FR', { hour12: false });
+  } catch (e) {
+    return '';
+  }
+}
+
+function getFilteredLogs() {
+  const logs = Array.isArray(state.logs) ? state.logs : [];
+  const level = elements.logLevelFilter ? elements.logLevelFilter.value : '';
+  const q = elements.logSearch ? elements.logSearch.value.trim().toLowerCase() : '';
+
+  return logs
+    .filter(l => {
+      if (level && l.level !== level) return false;
+      if (!q) return true;
+      const hay = `${l.message || ''} ${l.action || ''} ${l.category || ''}`.toLowerCase();
+      return hay.includes(q);
+    })
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+}
+
+function formatErrorMessage(message) {
+  // Détecter les messages d'erreur de type "Élément non trouvé"
+  const elementNotFoundMatch = message.match(/Élément non trouvé: (id|class|css|xpath|name|link|partialLink|tagName)=(.+)/i);
+  if (elementNotFoundMatch) {
+    const [, selectorType, selectorValue] = elementNotFoundMatch;
+    return `
+      <div class="error-message">
+        <div class="error-type">Élément non trouvé</div>
+        <div class="error-selector">
+          <span class="selector-type">${escapeHtml(selectorType)}</span>
+          <span class="selector-value">${escapeHtml(selectorValue)}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  // Détecter les erreurs d'exécution de commande
+  const commandErrorMatch = message.match(/Error executing command (\d+):\s*(.+)/i);
+  if (commandErrorMatch) {
+    const [, commandId, errorMessage] = commandErrorMatch;
+    return `
+      <div class="error-message">
+        <div class="error-type">Erreur d'exécution</div>
+        <div class="error-command">
+          <span class="command-id">Commande #${escapeHtml(commandId)}</span>
+          <span class="command-error">${escapeHtml(errorMessage)}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  // Pour les autres types de messages, retourner le message tel quel
+  return escapeHtml(message);
+}
+
+function renderLogs() {
+  if (!elements.logsList) return;
+
+  const logs = getFilteredLogs();
+  if (!logs.length) {
+    elements.logsList.innerHTML = '<div class="empty-state"><p>Aucun log</p></div>';
+    return;
+  }
+
+  elements.logsList.innerHTML = logs.map(l => {
+    const level = escapeHtml(l.level || 'info');
+    const category = escapeHtml(l.category || 'general');
+    const message = l.message || l.action || '';
+    const formattedMessage = level === 'error' ? formatErrorMessage(message) : escapeHtml(message);
+    const ts = escapeHtml(formatLogTs(l.ts));
+    
+    // Extraire les informations du scénario si disponibles
+    const scenarioInfo = l.data?._scenario;
+    const hasScenarioInfo = scenarioInfo && (scenarioInfo.scenarioId || scenarioInfo.scenarioName);
+    
+    // Formater les données en excluant les métadonnées internes
+    const logData = l.data ? { ...l.data } : {};
+    delete logData._scenario; // Ne pas afficher les métadonnées du scénario dans le JSON
+    
+    const data = Object.keys(logData).length > 0 ? JSON.stringify(logData, null, 2) : '';
+    const formattedData = data ? 
+      `<pre class="log-data">${escapeHtml(data)}</pre>` : '';
+
+    return `
+      <div class="log-item" data-level="${level}">
+        <div class="log-item-header">
+          <span class="log-ts">${ts}</span>
+          <span class="log-pill log-pill-${level}">${level}</span>
+          <span class="log-cat">${category}</span>
+          ${hasScenarioInfo ? `
+            <div class="log-scenario">
+              <span class="log-scenario-label">Scénario:</span>
+              ${scenarioInfo.scenarioName ? 
+                `<span class="log-scenario-name">${escapeHtml(scenarioInfo.scenarioName)}</span>` : 
+                `<span class="log-scenario-id">${escapeHtml(scenarioInfo.scenarioId)}</span>`}
+              ${scenarioInfo.scenarioGroup ? 
+                `<span class="log-scenario-group">(${escapeHtml(scenarioInfo.scenarioGroup)})</span>` : ''}
+            </div>
+          ` : ''}
+        </div>
+        <div class="log-message">${formattedMessage}</div>
+        ${formattedData}
+      </div>
+    `;
+  }).join('');
+}
+
+async function refreshLogs() {
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'GET_LOGS' });
+    state.logs = resp && Array.isArray(resp.logs) ? resp.logs : [];
+  } catch (e) {
+    state.logs = [];
+  }
+  renderLogs();
+}
+
+function exportLogs() {
+  const logs = getFilteredLogs();
+  const dataStr = JSON.stringify(logs, null, 2);
+  const blob = new Blob([dataStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `mkp-logs-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function clearLogs() {
+  try {
+    await chrome.runtime.sendMessage({ type: 'CLEAR_LOGS' });
+    await refreshLogs();
+  } catch (e) {
+    // ignore
+  }
+}
 
 if (elements.btnSidePanel) {
   elements.btnSidePanel.addEventListener('click', async () => {
@@ -180,6 +357,13 @@ elements.btnStart.addEventListener('click', async () => {
   
   await chrome.runtime.sendMessage({ type: 'CLEAR_SCENARIO' });
   await chrome.runtime.sendMessage({ type: 'START_RECORDING', tabId: tab.id });
+  logEvent({
+    level: 'info',
+    category: 'recording',
+    action: 'start',
+    message: 'Démarrage enregistrement (popup)',
+    data: { tabId: tab.id, scenarioName: state.currentScenario.Name }
+  });
   
   state.isRecording = true;
   updateUIState();
@@ -189,6 +373,7 @@ elements.btnStart.addEventListener('click', async () => {
 elements.btnStop.addEventListener('click', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   await chrome.runtime.sendMessage({ type: 'STOP_RECORDING', tabId: tab ? tab.id : null });
+  logEvent({ level: 'info', category: 'recording', action: 'stop', message: 'Arrêt enregistrement (popup)', data: { tabId: tab ? tab.id : null } });
   
   state.isRecording = false;
   updateUIState();
@@ -224,6 +409,14 @@ elements.btnPlay.addEventListener('click', async () => {
     type: 'PLAY_SCENARIO',
     tabId: tab.id,
     useRealTiming: true
+  });
+
+  logEvent({
+    level: 'info',
+    category: 'playback',
+    action: 'play_scenario',
+    message: 'Lecture scénario (popup)',
+    data: { tabId: tab.id, commands: scenarioToPlay.Commands.length, useRealTiming: true }
   });
 
   pollPlaybackState();
@@ -276,6 +469,7 @@ function pollPlaybackState() {
       // Mettre à jour le statut
       showStatus('playing', `Lecture ${st.currentIndex + 1}/${st.total}...`);
       highlightCommand(st.currentIndex);
+      setCommandErrors(st.errorIndexes);
       
     } else if (st.status === 'completed') {
       clearInterval(interval);
@@ -286,6 +480,7 @@ function pollPlaybackState() {
       elements.btnPlay.disabled = false;
       elements.btnStart.disabled = false;
       clearCommandHighlight();
+      setCommandErrors(st.errorIndexes);
       
     } else if (st.status === 'error' || st.status === 'stopped') {
       clearInterval(interval);
@@ -293,6 +488,7 @@ function pollPlaybackState() {
       elements.btnPlay.disabled = false;
       elements.btnStart.disabled = false;
       clearCommandHighlight();
+      setCommandErrors(st.errorIndexes);
       
     } else if (st.status === 'skipped') {
       // Mettre à jour la progression même pour les commandes ignorées
@@ -508,6 +704,16 @@ function highlightCommand(index) {
       container.scrollTop = container.scrollTop + (itemRect.bottom - containerRect.bottom) + 10; // 10px de marge
     }
   }
+}
+
+function setCommandErrors(errorIndexes) {
+  const normalized = Array.isArray(errorIndexes) ? errorIndexes : [];
+  const errorSet = new Set(normalized);
+
+  const commandItems = elements.commandsList.querySelectorAll('.command-item');
+  commandItems.forEach((item, i) => {
+    item.classList.toggle('error', errorSet.has(i));
+  });
 }
 
 function clearCommandHighlight() {
@@ -886,8 +1092,10 @@ elements.fileImport.addEventListener('change', async (e) => {
     await saveData();
     refreshScenariosList();
     showStatus('success', `${scenarios.length} scénario(s) importé(s)`);
+    logEvent({ level: 'success', category: 'import', action: 'import_scenarios', message: `${scenarios.length} scénario(s) importé(s)`, data: { count: scenarios.length } });
   } catch (error) {
     showStatus('error', 'Erreur import: ' + error.message);
+    logEvent({ level: 'error', category: 'import', action: 'import_scenarios', message: 'Erreur import', data: { error: error.message } });
   }
 
   elements.fileImport.value = '';
@@ -896,6 +1104,7 @@ elements.fileImport.addEventListener('change', async (e) => {
 elements.btnExportAll.addEventListener('click', () => {
   if (state.scenarios.length === 0) {
     showStatus('error', 'Aucun scénario à exporter');
+    logEvent({ level: 'warn', category: 'export', action: 'export_all', message: 'Aucun scénario à exporter' });
     return;
   }
 
@@ -908,6 +1117,8 @@ elements.btnExportAll.addEventListener('click', () => {
   a.download = `mkp_scenarios_${new Date().toISOString().split('T')[0]}.json`;
   a.click();
   URL.revokeObjectURL(url);
+
+  logEvent({ level: 'success', category: 'export', action: 'export_all', message: 'Export scénarios', data: { count: state.scenarios.length } });
 });
 
 // ==================== GROUPS ====================
@@ -1518,8 +1729,10 @@ if (elements.btnGenerateBackup) {
       const json = JSON.stringify(backup, null, 2);
       if (elements.backupOutput) elements.backupOutput.value = json;
       showToast('Backup généré', 'success');
+      logEvent({ level: 'success', category: 'backup', action: 'generate', message: 'Backup généré' });
     } catch (e) {
       showToast(e && e.message ? e.message : 'Erreur backup', 'error');
+      logEvent({ level: 'error', category: 'backup', action: 'generate', message: 'Erreur backup', data: { error: e && e.message ? e.message : String(e) } });
     }
   });
 }
@@ -1529,6 +1742,7 @@ if (elements.btnCopyBackup) {
     const text = elements.backupOutput ? elements.backupOutput.value : '';
     if (!text) {
       showToast('Aucun backup à copier', 'error');
+      logEvent({ level: 'warn', category: 'backup', action: 'copy', message: 'Aucun backup à copier' });
       return;
     }
 
@@ -1541,8 +1755,10 @@ if (elements.btnCopyBackup) {
         document.execCommand('copy');
       }
       showToast('Backup copié', 'success');
+      logEvent({ level: 'success', category: 'backup', action: 'copy', message: 'Backup copié' });
     } catch (e) {
       showToast('Impossible de copier', 'error');
+      logEvent({ level: 'error', category: 'backup', action: 'copy', message: 'Impossible de copier', data: { error: e && e.message ? e.message : String(e) } });
     }
   });
 }
@@ -1552,6 +1768,7 @@ if (elements.btnDownloadBackup) {
     const text = elements.backupOutput ? elements.backupOutput.value : '';
     if (!text) {
       showToast('Aucun backup à télécharger', 'error');
+      logEvent({ level: 'warn', category: 'backup', action: 'download', message: 'Aucun backup à télécharger' });
       return;
     }
 
@@ -1564,8 +1781,10 @@ if (elements.btnDownloadBackup) {
       a.click();
       URL.revokeObjectURL(url);
       showToast('Téléchargement lancé', 'success');
+      logEvent({ level: 'success', category: 'backup', action: 'download', message: 'Téléchargement backup lancé' });
     } catch (e) {
       showToast('Impossible de télécharger', 'error');
+      logEvent({ level: 'error', category: 'backup', action: 'download', message: 'Impossible de télécharger', data: { error: e && e.message ? e.message : String(e) } });
     }
   });
 }
@@ -1579,8 +1798,10 @@ if (elements.btnLoadBackupFile && elements.backupFileInput) {
       const text = await file.text();
       if (elements.backupInput) elements.backupInput.value = text;
       showToast('Fichier chargé', 'success');
+      logEvent({ level: 'success', category: 'backup', action: 'load_file', message: 'Fichier backup chargé' });
     } catch (e) {
       showToast('Impossible de lire le fichier', 'error');
+      logEvent({ level: 'error', category: 'backup', action: 'load_file', message: 'Impossible de lire le fichier', data: { error: e && e.message ? e.message : String(e) } });
     } finally {
       elements.backupFileInput.value = '';
     }
@@ -1592,6 +1813,7 @@ if (elements.btnRestoreBackup) {
     const text = elements.backupInput ? elements.backupInput.value : '';
     if (!text) {
       showToast('Collez un JSON de backup', 'error');
+      logEvent({ level: 'warn', category: 'backup', action: 'restore', message: 'Backup vide' });
       return;
     }
 
@@ -1625,11 +1847,19 @@ if (elements.btnRestoreBackup) {
       } catch (e) {}
 
       showToast('Restore terminé', 'success');
+      logEvent({ level: 'success', category: 'backup', action: 'restore', message: 'Restore terminé' });
     } catch (e) {
       showToast(e && e.message ? e.message : 'JSON invalide', 'error');
+      logEvent({ level: 'error', category: 'backup', action: 'restore', message: 'Erreur restore', data: { error: e && e.message ? e.message : String(e) } });
     }
   });
 }
+
+if (elements.btnRefreshLogs) elements.btnRefreshLogs.addEventListener('click', refreshLogs);
+if (elements.btnExportLogs) elements.btnExportLogs.addEventListener('click', exportLogs);
+if (elements.btnClearLogs) elements.btnClearLogs.addEventListener('click', clearLogs);
+if (elements.logLevelFilter) elements.logLevelFilter.addEventListener('change', renderLogs);
+if (elements.logSearch) elements.logSearch.addEventListener('input', renderLogs);
 
 elements.groupPlayStart.addEventListener('click', async () => {
   const checkedIds = Array.from(elements.groupScenariosList.querySelectorAll('input:checked'))
@@ -1881,6 +2111,7 @@ async function init() {
   await loadData();
   await loadCurrentScenario();
   await loadRecordingState();
+  await refreshLogs();
   
   // Initialiser la recherche de groupes
   document.getElementById('searchGroups')?.addEventListener('input', (e) => {
