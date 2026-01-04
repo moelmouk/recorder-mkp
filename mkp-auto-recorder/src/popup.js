@@ -1911,7 +1911,7 @@ function pollGroupPlayback(total) {
       showStatus('playing', `Scénario ${scenarioNum}/${total} - Action ${st.currentIndex + 1}/${st.total}`);
     } else if (st.status === 'completed') {
       clearInterval(interval);
-      showStatus('success', 'Groupe terminé');
+      showStatus('success', 'Lecture groupe terminé');
       showToast('Lecture du groupe terminée sans erreur', 'success');
     } else if (st.status === 'error' || st.status === 'stopped') {
       clearInterval(interval);
