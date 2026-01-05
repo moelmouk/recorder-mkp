@@ -192,12 +192,22 @@
         </div>
 
         <div class="action-buttons">
+          <button class="btn btn-secondary" id="btnPasteScenario">
+            <span class="btn-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="8" y="4" width="12" height="12" rx="2" ry="2"></rect>
+                <path d="M16 16H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h12"></path>
+              </svg>
+            </span>
+            Coller un scénario
+          </button>
+          
           <button class="btn btn-secondary" id="btnImport">
             <span class="btn-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
               </svg>
             </span>
             Importer
@@ -459,6 +469,33 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" id="helpCloseBtn">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de collage de scénario -->
+  <div class="modal" id="pasteModal">
+    <div class="modal-content" style="max-width: 600px;">
+      <div class="modal-header">
+        <h3>Coller un scénario</h3>
+        <button class="close-btn" id="closePasteModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="scenarioJson">Collez le JSON du scénario :</label>
+          <textarea id="scenarioJson" rows="15" class="form-control" placeholder="{\n  \"Name\": \"Nom du scénario\",\n  \"CreationDate\": \"2024-01-01\",\n  \"Commands\": [\n    {\n      \"Command\": \"type\",\n      \"Target\": \"id=example\",\n      \"Value\": \"valeur\"\n    }\n  ]\n}"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="pasteGroup">Groupe (optionnel) :</label>
+          <select id="pasteGroup" class="form-control">
+            <option value="">Sans groupe</option>
+          </select>
+        </div>
+        <div id="pasteError" class="error-message" style="display: none; color: #e53e3e; margin-top: 10px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="cancelPaste" class="btn btn-secondary">Annuler</button>
+        <button id="confirmPaste" class="btn btn-primary">Importer</button>
       </div>
     </div>
   </div>

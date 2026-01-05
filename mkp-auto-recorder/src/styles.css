@@ -1726,6 +1726,69 @@ body {
 /* Modal                */
 /* ==================== */
 
+/* Styles spécifiques pour la modale de collage */
+#pasteModal {
+  z-index: 1000;
+}
+
+#pasteModal .modal-content {
+  max-width: 600px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#scenarioJson {
+  width: 100%;
+  min-height: 200px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  resize: vertical;
+  margin-bottom: 15px;
+}
+
+#scenarioJson:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+#pasteError {
+  display: none;
+  background: var(--danger-light);
+  color: var(--danger);
+  padding: 8px 12px;
+  border-radius: var(--border-radius-sm);
+  margin-top: 10px;
+  font-size: 13px;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+#pasteGroup {
+  margin-bottom: 15px;
+}
+
+/* Amélioration de l'expérience utilisateur pour la zone de texte */
+#scenarioJson::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* Animation pour la modale */
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+#pasteModal .modal-content {
+  animation: modalFadeIn 0.2s ease-out;
+}
+
 .modal {
   display: none;
   position: fixed;

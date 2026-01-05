@@ -9,6 +9,16 @@ const elements = {
   // Tabs
   tabBtns: document.querySelectorAll('.tab-btn'),
   tabPanes: document.querySelectorAll('.tab-pane'),
+  
+  // Paste Scenario Modal
+  btnPasteScenario: document.getElementById('btnPasteScenario'),
+  pasteModal: document.getElementById('pasteModal'),
+  closePasteModal: document.getElementById('closePasteModal'),
+  cancelPaste: document.getElementById('cancelPaste'),
+  confirmPaste: document.getElementById('confirmPaste'),
+  scenarioJson: document.getElementById('scenarioJson'),
+  pasteGroup: document.getElementById('pasteGroup'),
+  pasteError: document.getElementById('pasteError'),
   btnSidePanel: document.getElementById('btnSidePanel'),
   btnSettings: document.getElementById('btnSettings'),
   btnHelp: document.getElementById('btnHelp'),
@@ -2096,6 +2106,107 @@ function displayVersion() {
   } catch (error) {
     console.error('Erreur lors de l\'affichage de la version:', error);
   }
+}
+
+// ==================== PASTE SCENARIO ====================
+
+// Fonction pour mettre à jour la liste déroulante des groupes
+async function updateGroupSelect(selectElement) {
+  if (!selectElement) return;
+  
+  const currentValue = selectElement.value;
+  selectElement.innerHTML = '<option value="">Sans groupe</option>';
+  
+  state.groups
+    .filter(group => !group.isFolder)
+    .forEach(group => {
+      const option = document.createElement('option');
+      option.value = group.id;
+      option.textContent = group.name;
+      selectElement.appendChild(option);
+    });
+  
+  if (currentValue && Array.from(selectElement.options).some(opt => opt.value === currentValue)) {
+    selectElement.value = currentValue;
+  }
+}
+
+// Fonction pour afficher une erreur
+function showError(message) {
+  if (!elements.pasteError) return;
+  
+  elements.pasteError.textContent = message;
+  elements.pasteError.style.display = 'block';
+  setTimeout(() => {
+    if (elements.pasteError) {
+      elements.pasteError.style.display = 'none';
+    }
+  }, 5000);
+}
+
+// Gestionnaire d'événements pour le bouton "Coller un scénario"
+if (elements.btnPasteScenario) {
+  elements.btnPasteScenario.addEventListener('click', () => {
+    updateGroupSelect(elements.pasteGroup);
+    elements.pasteModal.style.display = 'flex';
+    elements.scenarioJson.focus();
+  });
+}
+
+// Gestionnaire d'événements pour fermer la modale
+if (elements.closePasteModal) {
+  elements.closePasteModal.addEventListener('click', () => {
+    elements.pasteModal.style.display = 'none';
+  });
+}
+
+if (elements.cancelPaste) {
+  elements.cancelPaste.addEventListener('click', () => {
+    elements.pasteModal.style.display = 'none';
+  });
+}
+
+// Gestionnaire d'événements pour confirmer l'import
+if (elements.confirmPaste) {
+  elements.confirmPaste.addEventListener('click', async () => {
+    try {
+      const jsonText = elements.scenarioJson.value.trim();
+      if (!jsonText) {
+        showError('Veuillez coller un scénario au format JSON');
+        return;
+      }
+
+      const scenario = JSON.parse(jsonText);
+      
+      if (!scenario.Name || !Array.isArray(scenario.Commands)) {
+        throw new Error('Format de scénario invalide');
+      }
+
+      // Créer un nouveau scénario avec un nouvel ID
+      const newScenario = {
+        ...scenario,
+        id: generateId(),
+        CreationDate: new Date().toISOString(),
+        groupId: elements.pasteGroup.value || null
+      };
+
+      // Ajouter le scénario à la liste
+      state.scenarios.push(newScenario);
+      await saveData();
+      
+      // Mettre à jour l'interface
+      await refreshScenariosList();
+      showToast('Scénario importé avec succès');
+      
+      // Fermer la modale et réinitialiser le formulaire
+      elements.pasteModal.style.display = 'none';
+      elements.scenarioJson.value = '';
+      
+    } catch (error) {
+      console.error('Erreur lors de l\'import du scénario:', error);
+      showError(error.message || 'Erreur lors de l\'analyse du JSON');
+    }
+  });
 }
 
 // ==================== INIT ====================
