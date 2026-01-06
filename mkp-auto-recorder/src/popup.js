@@ -87,6 +87,9 @@ const elements = {
   btnRestoreBackup: document.getElementById('btnRestoreBackup'),
   btnLoadBackupFile: document.getElementById('btnLoadBackupFile'),
   backupFileInput: document.getElementById('backupFileInput'),
+  settingsTabBtns: document.querySelectorAll('#settingsTabNav .modal-tab-btn'),
+  settingsTabPanes: document.querySelectorAll('#settingsModal .modal-tab-pane'),
+  themeSelect: document.getElementById('themeSelect'),
 
   logLevelFilter: document.getElementById('logLevelFilter'),
   logSearch: document.getElementById('logSearch'),
@@ -95,6 +98,44 @@ const elements = {
   btnClearLogs: document.getElementById('btnClearLogs'),
   logsList: document.getElementById('logsList')
 };
+
+function applyTheme(theme) {
+  const t = (theme === 'dark') ? 'dark' : 'light';
+  document.body.setAttribute('data-theme', t);
+  if (elements.themeSelect) elements.themeSelect.value = t;
+}
+
+async function loadTheme() {
+  try {
+    const result = await chrome.storage.local.get(['mkpTheme']);
+    const theme = result && result.mkpTheme ? result.mkpTheme : 'light';
+    applyTheme(theme);
+  } catch (e) {
+    applyTheme('light');
+  }
+}
+
+async function saveTheme(theme) {
+  const t = (theme === 'dark') ? 'dark' : 'light';
+  try {
+    await chrome.storage.local.set({ mkpTheme: t });
+  } catch (e) {
+    // ignore
+  }
+  applyTheme(t);
+}
+
+function setSettingsTab(tabId) {
+  const id = (tabId === 'configuration') ? 'configuration' : 'backup';
+  elements.settingsTabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === id));
+  elements.settingsTabPanes.forEach(p => p.classList.toggle('active', p.id === `settings-tab-${id}`));
+}
+
+function initSettingsTabs() {
+  elements.settingsTabBtns.forEach(btn => {
+    btn.addEventListener('click', () => setSettingsTab(btn.dataset.tab));
+  });
+}
 
 // ==================== STATE ====================
 
@@ -1712,6 +1753,7 @@ if (elements.settingsCancel) elements.settingsCancel.addEventListener('click', c
 function openSettingsModal() {
   if (!elements.settingsModal) return;
   elements.settingsModal.classList.add('active');
+  setSettingsTab('backup');
 }
 
 function closeSettingsModal() {
@@ -2215,6 +2257,14 @@ async function init() {
   // Afficher la version du plugin en premier
   console.log('Initialisation de la popup...');
   displayVersion();
+
+  initSettingsTabs();
+  if (elements.themeSelect) {
+    elements.themeSelect.addEventListener('change', async () => {
+      await saveTheme(elements.themeSelect.value);
+    });
+  }
+  await loadTheme();
   
   // Initialiser l'état des groupes dépliés
   state.expandedGroups = state.expandedGroups || {};
