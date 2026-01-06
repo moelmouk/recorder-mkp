@@ -955,10 +955,39 @@
         highlightElement(el);
         focusIfEditable(el);
         
+        // Vider le champ
         el.value = '';
-        el.value = value;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
+        
+        // Pour les champs sensibles, simuler une saisie progressive
+        if (target.includes('zipcode') || target.includes('code-postal') || target.includes('postal-code') || 
+            target.includes('first-name') || target.includes('surname') || target.includes('last-name')) {
+            // Simuler la saisie caractère par caractère
+            for (let i = 0; i < value.length; i++) {
+                const char = value[i];
+                el.value += char;
+                
+                // Déclencher les événements pour chaque caractère
+                el.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
+                el.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                
+                // Petit délai entre chaque caractère
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            // Déclencher les événements finaux
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.dispatchEvent(new Event('blur', { bubbles: true }));
+            
+            // Attendre un peu pour l'auto-complétion
+            await new Promise(resolve => setTimeout(resolve, 500));
+        } else {
+            // Comportement normal pour les autres champs
+            el.value = value;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        
         return { success: true };
       }
 
