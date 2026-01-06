@@ -233,6 +233,7 @@
           </div>
           <div class="mkp-step-command" id="mkp-step-command">-</div>
           <div class="mkp-step-target" id="mkp-step-target">-</div>
+          <div class="mkp-step-timer" id="mkp-step-timer" style="display: none; color: #0066cc; font-size: 14px; margin-top: 10px; font-weight: bold; padding: 5px; background: #f0f8ff; border-radius: 4px;"></div>
         </div>
         <div class="mkp-playback-error" id="mkp-error-box" style="display: none;">
           <div class="mkp-error-text" id="mkp-error-text"></div>
@@ -330,11 +331,27 @@
     playbackUiStatus = 'playing';
   }
 
-  function updatePlaybackOverlay(current, total, command) {
+  let countdownInterval = null;
+  
+  function updatePlaybackOverlay(current, total, command, delay = 0) {
+    console.log('updatePlaybackOverlay called with:', { current, total, command, delay });
+    
     const progress = document.getElementById('mkp-progress');
     const cmdEl = document.getElementById('mkp-step-command');
     const targetEl = document.getElementById('mkp-step-target');
+    const timerEl = document.getElementById('mkp-step-timer');
     const errorBox = document.getElementById('mkp-error-box');
+    
+    console.log('Timer element found:', !!timerEl);
+    if (timerEl) {
+      console.log('Timer element style:', timerEl.style.display);
+    }
+
+    // Arrêter le décompte précédent s'il y en a un
+    if (countdownInterval) {
+      clearInterval(countdownInterval);
+      countdownInterval = null;
+    }
 
     if (progress) progress.textContent = `${current}/${total}`;
     if (cmdEl) cmdEl.textContent = command.Command || '-';
@@ -343,6 +360,30 @@
       targetEl.textContent = target.length > 60 ? target.substring(0, 60) + '...' : target;
       targetEl.title = target;
     }
+    
+    // Mettre à jour le timer avec le délai initial
+    if (timerEl) {
+      if (delay > 0) {
+        let remaining = Math.ceil(delay / 1000); // Convertir en secondes
+        timerEl.textContent = `Prochaine commande dans: ${remaining}s`;
+        timerEl.style.display = 'block';
+        
+        // Démarrer le décompte
+        countdownInterval = setInterval(() => {
+          remaining--;
+          if (remaining <= 0) {
+            clearInterval(countdownInterval);
+            countdownInterval = null;
+            timerEl.style.display = 'none';
+          } else {
+            timerEl.textContent = `Prochaine commande dans: ${remaining}s`;
+          }
+        }, 1000);
+      } else {
+        timerEl.style.display = 'none';
+      }
+    }
+    
     if (errorBox) errorBox.style.display = 'none';
   }
 
@@ -377,6 +418,16 @@
     const style = document.createElement('style');
     style.id = 'mkp-recorder-styles';
     style.textContent = `
+      .mkp-step-timer {
+        color: #0066cc;
+        font-size: 14px;
+        margin-top: 10px;
+        font-weight: bold;
+        padding: 5px;
+        background: #f0f8ff;
+        border-radius: 4px;
+        display: none; /* Sera affiché par le JavaScript quand nécessaire */
+      }
       /* Recording Indicator */
       #mkp-recording-indicator {
         position: fixed;
@@ -846,7 +897,8 @@
         sendResponse({ success: true });
         break;
       case 'UPDATE_PLAYBACK_OVERLAY':
-        updatePlaybackOverlay(message.current, message.total, message.command);
+        console.log('UPDATE_PLAYBACK_OVERLAY received with delay:', message.delay);
+        updatePlaybackOverlay(message.current, message.total, message.command, message.delay || 0);
         sendResponse({ success: true });
         break;
       case 'SET_PLAYBACK_UI_STATE':

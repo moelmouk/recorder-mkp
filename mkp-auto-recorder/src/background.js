@@ -714,7 +714,8 @@ async function executeScenario(scenario, tabId, useRealTiming) {
         type: 'UPDATE_PLAYBACK_OVERLAY',
         current: i + 1,
         total: scenario.Commands.length,
-        command: cmd
+        command: cmd,
+        delay: useRealTiming && cmd.timing ? cmd.timing : 0
       });
     } catch (e) {
       console.log('Error updating overlay:', e);
