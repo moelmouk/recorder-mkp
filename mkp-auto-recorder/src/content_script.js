@@ -635,6 +635,8 @@
   
   let isRecording = false;
   let recordedCommands = [];
+  let lastRecordedValueByEl = new WeakMap();
+  let inputDebounceTimersByEl = new WeakMap();
 
   // ========== EVENT HANDLERS ==========
 
@@ -645,6 +647,41 @@
 
     const target = e.target;
     const locator = getLocator(target);
+
+    const isProfessionOptionClick = (locator.Target || '').includes('profession_input-select_') && !(locator.Target || '').endsWith('jobRefId') && !(locator.Target || '').includes('_jobRefId');
+    if (isProfessionOptionClick) {
+      const active = document.activeElement;
+      if (active) {
+        const tagName = active.tagName ? active.tagName.toLowerCase() : '';
+        if (tagName === 'input' || tagName === 'textarea') {
+          const currentValue = active.value;
+          const lastValue = lastRecordedValueByEl.get(active);
+          if (currentValue !== lastValue) {
+            const activeLocator = getLocator(active);
+            const command = {
+              Command: 'type',
+              Target: activeLocator.Target,
+              Value: currentValue,
+              Targets: activeLocator.Targets,
+              Description: ''
+            };
+
+            const prevTimer = inputDebounceTimersByEl.get(active);
+            if (prevTimer) {
+              clearTimeout(prevTimer);
+              inputDebounceTimersByEl.delete(active);
+            }
+
+            recordedCommands.push(command);
+            lastRecordedValueByEl.set(active, currentValue);
+            chrome.runtime.sendMessage({ type: 'COMMAND_RECORDED', command: command });
+
+            highlightElement(active);
+            updateCommandCount(recordedCommands.length);
+          }
+        }
+      }
+    }
 
     const command = {
       Command: 'click',
@@ -662,6 +699,47 @@
     console.log('MKP Recorded:', command);
   };
 
+  const recordInput = (e) => {
+    if (!isRecording) return;
+    if (e.target.closest('#mkp-recording-indicator')) return;
+    if (e.target.closest('#mkp-playback-overlay')) return;
+
+    const target = e.target;
+    const tagName = target.tagName.toLowerCase();
+    if (tagName !== 'input' && tagName !== 'textarea') return;
+
+    const prevTimer = inputDebounceTimersByEl.get(target);
+    if (prevTimer) clearTimeout(prevTimer);
+
+    const timer = setTimeout(() => {
+      if (!isRecording) return;
+      if (target.closest('#mkp-recording-indicator')) return;
+      if (target.closest('#mkp-playback-overlay')) return;
+
+      const currentValue = target.value;
+      const lastValue = lastRecordedValueByEl.get(target);
+      if (currentValue === lastValue) return;
+
+      const locator = getLocator(target);
+      const command = {
+        Command: 'type',
+        Target: locator.Target,
+        Value: currentValue,
+        Targets: locator.Targets,
+        Description: ''
+      };
+
+      recordedCommands.push(command);
+      lastRecordedValueByEl.set(target, currentValue);
+      chrome.runtime.sendMessage({ type: 'COMMAND_RECORDED', command: command });
+
+      highlightElement(target);
+      updateCommandCount(recordedCommands.length);
+    }, 300);
+
+    inputDebounceTimersByEl.set(target, timer);
+  };
+
   const recordChange = (e) => {
     if (!isRecording) return;
     if (e.target.closest('#mkp-recording-indicator')) return;
@@ -671,6 +749,9 @@
     const tagName = target.tagName.toLowerCase();
 
     if (tagName === 'input' || tagName === 'textarea') {
+      const lastValue = lastRecordedValueByEl.get(target);
+      if (target.value === lastValue) return;
+
       const locator = getLocator(target);
       const command = {
         Command: 'type',
@@ -681,6 +762,7 @@
       };
 
       recordedCommands.push(command);
+      lastRecordedValueByEl.set(target, target.value);
       chrome.runtime.sendMessage({ type: 'COMMAND_RECORDED', command: command });
       
       highlightElement(target);
@@ -710,6 +792,7 @@
     isRecording = true;
     recordedCommands = [];
     document.addEventListener('click', recordClick, true);
+    document.addEventListener('input', recordInput, true);
     document.addEventListener('change', recordChange, true);
     console.log('MKP Recording started');
   };
@@ -717,6 +800,7 @@
   const stopRecording = () => {
     isRecording = false;
     document.removeEventListener('click', recordClick, true);
+    document.removeEventListener('input', recordInput, true);
     document.removeEventListener('change', recordChange, true);
     console.log('MKP Recording stopped');
   };
@@ -914,6 +998,82 @@
     return el;
   }
 
+  function extractIdFromLocator(locator) {
+    if (!locator || typeof locator !== 'string') return '';
+    const i = locator.indexOf('=');
+    if (i === -1) return '';
+    const method = locator.substr(0, i).toLowerCase();
+    const value = locator.substr(i + 1);
+
+    if (method === 'id') return value;
+
+    if (method === 'css') {
+      const m = value.match(/^#([^\s>+~.:#\[]+)/);
+      return m ? m[1] : '';
+    }
+
+    if (method === 'xpath') {
+      const m = value.match(/@id\s*=\s*("|')([^"']+)("|')/);
+      return m ? m[2] : '';
+    }
+
+    return '';
+  }
+
+  // Fonction pour déclencher correctement les événements de changement Angular
+  function triggerAngularInputChange(element, value) {
+    if (!element) return false;
+
+    const tag = (element.tagName || '').toLowerCase();
+    const proto = tag === 'textarea' ? window.HTMLTextAreaElement?.prototype : window.HTMLInputElement?.prototype;
+    const protoSetter = proto ? Object.getOwnPropertyDescriptor(proto, 'value')?.set : null;
+    const ownSetter = Object.getOwnPropertyDescriptor(element, 'value')?.set;
+
+    // Mise à jour de la valeur (utiliser le setter natif pour que Angular détecte mieux)
+    try {
+      if (protoSetter && ownSetter !== protoSetter) protoSetter.call(element, value);
+      else if (ownSetter) ownSetter.call(element, value);
+      else element.value = value;
+    } catch (e) {
+      element.value = value;
+    }
+
+    // Déclenchement des événements natifs
+    try {
+      element.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: value, inputType: 'insertReplacementText' }));
+    } catch (e) {
+      element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+    }
+    element.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+    
+    // Pour Angular
+    if (window.ng) {
+      try {
+        const ngElement = window.ng.getComponent(element) || 
+                         window.ng.getContext(element) || 
+                         element.__ngContext__;
+        if (ngElement) {
+          // Essayer de déclencher la détection de changements
+          const injector = window.ng.getInjector(element);
+          if (injector) {
+            const ngZone = injector.get(window.ng.core.NgZone);
+            if (ngZone) {
+              ngZone.run(() => {
+                element.dispatchEvent(new Event('change'));
+              });
+              return true;
+            }
+          }
+        }
+      } catch (e) {
+        console.log('Angular detection error:', e);
+      }
+    }
+
+    // Fallback si Angular n'est pas détecté
+    return false;
+  }
+
   async function executeCommand(cmd) {
     const command = cmd.Command ? cmd.Command.toLowerCase() : '';
     const target = cmd.Target || '';
@@ -929,8 +1089,67 @@
 
       case 'click':
       case 'clickandwait': {
-        const el = findElementWithFallback(target, targets);
+        const isProfessionOption = target.includes('profession_input-select_') && !target.endsWith('jobRefId') && target.includes('_jobRefId') === false;
+
+        let el = findElementWithFallback(target, targets);
+        if (!el && isProfessionOption) {
+          const maxWait = 8000;
+          const interval = 200;
+          let waited = 0;
+          while (waited < maxWait && !el) {
+            await new Promise(r => setTimeout(r, interval));
+            waited += interval;
+            el = findElementWithFallback(target, targets);
+          }
+        }
+
         if (!el) throw new Error(`Élément non trouvé: ${target.substring(0, 50)}`);
+        
+        // Vérifier si c'est un clic sur une option de profession
+        if (isProfessionOption) {
+          // IMPORTANT: on doit réellement cliquer sur l'option pour que ng-select / Angular mette à jour son modèle.
+          try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+          highlightElement(el);
+
+          ['mousedown', 'mouseup', 'click'].forEach(eventType => {
+            if (eventType === 'click' && typeof el.click === 'function') {
+              el.click();
+              return;
+            }
+            el.dispatchEvent(new MouseEvent(eventType, { view: window, bubbles: true, cancelable: true }));
+          });
+
+          // Petit délai pour laisser Angular appliquer la sélection
+          await new Promise(r => setTimeout(r, 100));
+
+          // Fallback: certains écrans réinitialisent au blur si la valeur (jobRefId) n'est pas propagée.
+          // On tente de cibler le champ associé et de pousser la valeur via setter natif + events.
+          let optionId = extractIdFromLocator(target);
+          if (!optionId && Array.isArray(targets) && targets.length) {
+            for (const t of targets) {
+              optionId = extractIdFromLocator(t);
+              if (optionId) break;
+            }
+          }
+
+          if (optionId && optionId.includes('_input-select_')) {
+            const baseId = optionId.split('_input-select_')[0];
+            const inputIdPrefix = `${baseId}_input-select_`;
+            const selector = `[id^="${CSS.escape(inputIdPrefix)}"][id$="_jobRefId"] input`;
+            const inputField = document.querySelector(selector);
+
+            if (inputField) {
+              const selectedText = (el.textContent || '').trim();
+              const selectedValue = el.getAttribute('data-value') || selectedText;
+              const type = (inputField.getAttribute('type') || '').toLowerCase();
+              const valueToSet = type === 'hidden' ? selectedValue : selectedText;
+
+              triggerAngularInputChange(inputField, valueToSet);
+            }
+          }
+
+          return { success: true };
+        }
         
         try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
         highlightElement(el);
@@ -957,10 +1176,17 @@
         
         // Vider le champ
         el.value = '';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
         
         // Pour les champs sensibles, simuler une saisie progressive
-        if (target.includes('zipcode') || target.includes('code-postal') || target.includes('postal-code') || 
+        const isProfessionField = target.includes('profession_input-select') && (target.endsWith('input') || target.includes('/input'));
+        if (isProfessionField || target.includes('zipcode') || target.includes('code-postal') || target.includes('postal-code') || 
             target.includes('first-name') || target.includes('surname') || target.includes('last-name')) {
+            if (isProfessionField) {
+              try { el.click(); } catch (e) {}
+              focusIfEditable(el);
+            }
+
             // Simuler la saisie caractère par caractère
             for (let i = 0; i < value.length; i++) {
                 const char = value[i];
@@ -969,6 +1195,7 @@
                 // Déclencher les événements pour chaque caractère
                 el.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
                 el.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
+                el.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true }));
                 el.dispatchEvent(new Event('input', { bubbles: true }));
                 
                 // Petit délai entre chaque caractère
@@ -977,7 +1204,7 @@
             
             // Déclencher les événements finaux
             el.dispatchEvent(new Event('change', { bubbles: true }));
-            el.dispatchEvent(new Event('blur', { bubbles: true }));
+            if (!isProfessionField) el.dispatchEvent(new Event('blur', { bubbles: true }));
             
             // Attendre un peu pour l'auto-complétion
             await new Promise(resolve => setTimeout(resolve, 500));
