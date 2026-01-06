@@ -388,26 +388,88 @@
   }
 
   function showPlaybackError(errorMessage) {
+    console.log('showPlaybackError called with:', errorMessage);
+    
+    // S'assurer que l'overlay est bien créé
+    if (!playbackOverlay) {
+      console.log('No playback overlay found, creating one...');
+      createPlaybackOverlay();
+    }
+
     const errorBox = document.getElementById('mkp-error-box');
     const errorText = document.getElementById('mkp-error-text');
     const actionsBox = document.getElementById('mkp-playback-actions-box');
 
-    if (errorBox) errorBox.style.display = 'block';
-    if (errorText) errorText.textContent = errorMessage;
-    if (actionsBox) actionsBox.style.display = 'none';
+    console.log('Error elements:', { errorBox, errorText, actionsBox });
+
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.style.zIndex = '2147483647'; // S'assurer qu'il est au-dessus de tout
+    }
+    
+    if (errorText) {
+      errorText.textContent = errorMessage || 'Une erreur inconnue est survenue';
+    }
+    
+    if (actionsBox) {
+      actionsBox.style.display = 'none';
+    }
+
+    // S'assurer que l'overlay est visible
+    if (playbackOverlay) {
+      playbackOverlay.style.display = 'block';
+      playbackOverlay.style.zIndex = '2147483646'; // Juste en dessous de l'erreur
+    }
 
     // Return a promise that resolves when user clicks a button
     return new Promise((resolve) => {
-      skipResolve = resolve;
+      console.log('Setting up skipResolve callback');
+      skipResolve = (action) => {
+        console.log('skipResolve called with action:', action);
+        skipResolve = null;
+        resolve(action);
+      };
+      
+      // Timeout de sécurité au cas où l'utilisateur ne clique sur aucun bouton
+      setTimeout(() => {
+        if (skipResolve) {
+          console.log('Timeout reached, resolving with skip action');
+          skipResolve('skip');
+        }
+      }, 30000); // 30 secondes de timeout
     });
   }
 
   function hidePlaybackError() {
+    console.log('hidePlaybackError called');
+    
     const errorBox = document.getElementById('mkp-error-box');
     const actionsBox = document.getElementById('mkp-playback-actions-box');
-    if (errorBox) errorBox.style.display = 'none';
-    if (actionsBox) actionsBox.style.display = 'block';
-    skipResolve = null;
+    
+    if (errorBox) {
+      errorBox.style.display = 'none';
+      // Réinitialiser les styles si nécessaire
+      errorBox.style.zIndex = '';
+    }
+    
+    if (actionsBox) {
+      actionsBox.style.display = 'block';
+    }
+    
+    // Nettoyer la référence skipResolve si elle existe
+    if (skipResolve) {
+      console.log('Cleaning up pending skipResolve');
+      const resolve = skipResolve;
+      skipResolve = null;
+      // Résoudre avec 'skip' pour éviter les blocages
+      resolve('skip');
+    }
+    
+    // S'assurer que l'overlay reste visible
+    if (playbackOverlay) {
+      playbackOverlay.style.display = 'block';
+      playbackOverlay.style.zIndex = '2147483646';
+    }
   }
 
   // ========== INJECT STYLES ==========
@@ -908,9 +970,16 @@
         sendResponse({ success: true });
         break;
       case 'SHOW_PLAYBACK_ERROR':
-        showPlaybackError(message.error).then(action => {
-          sendResponse({ success: true, action: action });
-        });
+        console.log('SHOW_PLAYBACK_ERROR received with message:', message.error);
+        showPlaybackError(message.error)
+          .then(action => {
+            console.log('User action in SHOW_PLAYBACK_ERROR:', action);
+            sendResponse({ success: true, action: action });
+          })
+          .catch(error => {
+            console.error('Error in SHOW_PLAYBACK_ERROR:', error);
+            sendResponse({ success: false, error: error.message });
+          });
         return true; // Keep channel open for async
       case 'HIDE_PLAYBACK_ERROR':
         hidePlaybackError();
