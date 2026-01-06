@@ -410,6 +410,24 @@ async function handleStartRecording(tabId) {
   }
 
   try {
+    // Récupérer l'URL de l'onglet actuel
+    const tab = await chrome.tabs.get(tabId);
+    if (tab && tab.url) {
+      // Ajouter la commande open avec l'URL de la page de démarrage
+      const openCommand = {
+        Command: 'open',
+        Target: tab.url,
+        Value: '',
+        Description: 'Ouverture automatique de la page de démarrage',
+        Targets: [],
+        timing: 0,
+        timestamp: Date.now(),
+        disabled: false
+      };
+      currentScenario.Commands.push(openCommand);
+      await saveState();
+    }
+
     await chrome.tabs.sendMessage(tabId, { type: 'START_RECORDING' });
     await chrome.tabs.sendMessage(tabId, { type: 'SHOW_RECORDING_INDICATOR' });
   } catch (e) {
