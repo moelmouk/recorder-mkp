@@ -605,11 +605,139 @@ body {
   font-size: 11px;
 }
 
+/* Boutons à icônes */
 .btn-icon-only {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   padding: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  position: relative;
+  cursor: pointer;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-sm);
 }
+
+.btn-icon-only:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  color: var(--text-primary);
+}
+
+.btn-icon-only:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-icon-only svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.5px;
+}
+
+/* Style spécifique pour les boutons d'action principaux */
+.btn-primary.btn-icon-only {
+  background: var(--primary);
+  color: white;
+}
+
+.btn-primary.btn-icon-only:hover:not(:disabled) {
+  background: var(--primary-hover);
+  color: white;
+}
+
+/* Style pour les boutons d'enregistrement et d'arrêt */
+.btn-record.btn-icon-only {
+  background: var(--danger);
+  color: white;
+}
+
+.btn-record.btn-icon-only:hover:not(:disabled) {
+  background: #dc2626;
+  color: white;
+}
+
+.btn-stop.btn-icon-only {
+  background: var(--secondary);
+  color: white;
+}
+
+.btn-stop.btn-icon-only:hover:not(:disabled) {
+  background: var(--secondary-hover);
+  color: white;
+}
+
+/* Conteneur des boutons */
+.control-buttons,
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.action-buttons {
+  border-top: 1px solid var(--border-color);
+  justify-content: flex-end;
+}
+
+/* Infobulles */
+[title] {
+  position: relative;
+}
+
+[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text-primary);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 1000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+[title]:hover::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% - 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 5px 5px 0;
+  border-style: solid;
+  border-color: var(--text-primary) transparent transparent;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+[title]:hover::after,
+[title]:hover::before {
+  opacity: 1;
+  bottom: calc(100% + 5px);
+}
+
+/* Désactiver les infobulles sur mobile */
+@media (max-width: 480px) {
+  [title]::after,
+  [title]::before {
+    display: none;
+  }
+}
+
 
 /* Control Buttons */
 .control-buttons {

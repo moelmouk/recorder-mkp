@@ -30,11 +30,13 @@ const elements = {
   statusBar: document.getElementById('statusBar'),
   scenarioName: document.getElementById('scenarioName'),
   scenarioGroup: document.getElementById('scenarioGroup'),
+  appendRecording: document.getElementById('appendRecording'),
   btnStart: document.getElementById('btnStart'),
   btnStop: document.getElementById('btnStop'),
   btnPlay: document.getElementById('btnPlay'),
   btnSave: document.getElementById('btnSave'),
   btnClear: document.getElementById('btnClear'),
+  btnAddCommand: document.getElementById('btnAddCommand'),
   commandsList: document.getElementById('commandsList'),
   commandCount: document.getElementById('commandCount'),
   
@@ -402,24 +404,54 @@ elements.btnStart.addEventListener('click', async () => {
     return;
   }
 
-  state.currentScenario = createEmptyScenario();
-  state.currentScenario.Name = elements.scenarioName.value || 'Nouveau scénario';
-  state.currentScenario.groupId = elements.scenarioGroup.value;
-  
-  await chrome.runtime.sendMessage({ type: 'CLEAR_SCENARIO' });
-  await chrome.runtime.sendMessage({ type: 'START_RECORDING', tabId: tab.id });
+  const append = !!(elements.appendRecording && elements.appendRecording.checked);
+
+  if (!append) {
+    state.currentScenario = createEmptyScenario();
+    state.currentScenario.Name = elements.scenarioName.value || 'Nouveau scénario';
+    state.currentScenario.groupId = elements.scenarioGroup.value;
+
+    await chrome.runtime.sendMessage({ type: 'CLEAR_SCENARIO' });
+  } else {
+    state.currentScenario.Name = elements.scenarioName.value || state.currentScenario.Name || 'Nouveau scénario';
+    state.currentScenario.groupId = elements.scenarioGroup.value;
+    await syncToBackground();
+  }
+
+  await chrome.runtime.sendMessage({ type: 'START_RECORDING', tabId: tab.id, append: append });
   logEvent({
     level: 'info',
     category: 'recording',
     action: 'start',
     message: 'Démarrage enregistrement (popup)',
-    data: { tabId: tab.id, scenarioName: state.currentScenario.Name }
+    data: { tabId: tab.id, scenarioName: state.currentScenario.Name, append: append }
   });
   
   state.isRecording = true;
   updateUIState();
   startPolling();
 });
+
+if (elements.btnAddCommand) {
+  elements.btnAddCommand.addEventListener('click', () => {
+    const newCmd = {
+      Command: 'click',
+      Target: '',
+      Value: '',
+      Description: '',
+      Targets: [],
+      timing: 0,
+      timestamp: Date.now(),
+      disabled: false
+    };
+
+    state.currentScenario.Commands.push(newCmd);
+    renderCommands();
+    syncToBackground();
+
+    editCommand(state.currentScenario.Commands.length - 1);
+  });
+}
 
 elements.btnStop.addEventListener('click', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

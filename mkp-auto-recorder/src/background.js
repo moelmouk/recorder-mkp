@@ -166,7 +166,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         message: 'Démarrage enregistrement',
         data: { tabId: message.tabId || (sender.tab ? sender.tab.id : null) }
       });
-      handleStartRecording(message.tabId || (sender.tab ? sender.tab.id : null));
+      handleStartRecording(message.tabId || (sender.tab ? sender.tab.id : null), { append: !!message.append });
       sendResponse({ success: true });
       break;
 
@@ -390,13 +390,15 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 // ========== RECORDING HANDLERS ==========
 
-async function handleStartRecording(tabId) {
+async function handleStartRecording(tabId, { append = false } = {}) {
   isRecording = true;
   recordingTabId = tabId;
   lastCommandTime = Date.now();
-  
-  currentScenario.Commands = [];
-  currentScenario.CreationDate = new Date().toISOString().split('T')[0];
+
+  if (!append) {
+    currentScenario.Commands = [];
+    currentScenario.CreationDate = new Date().toISOString().split('T')[0];
+  }
 
   updateBadge();
 
@@ -410,22 +412,24 @@ async function handleStartRecording(tabId) {
   }
 
   try {
-    // Récupérer l'URL de l'onglet actuel
-    const tab = await chrome.tabs.get(tabId);
-    if (tab && tab.url) {
-      // Ajouter la commande open avec l'URL de la page de démarrage
-      const openCommand = {
-        Command: 'open',
-        Target: tab.url,
-        Value: '',
-        Description: 'Ouverture automatique de la page de démarrage',
-        Targets: [],
-        timing: 0,
-        timestamp: Date.now(),
-        disabled: false
-      };
-      currentScenario.Commands.push(openCommand);
-      await saveState();
+    if (!append) {
+      // Récupérer l'URL de l'onglet actuel
+      const tab = await chrome.tabs.get(tabId);
+      if (tab && tab.url) {
+        // Ajouter la commande open avec l'URL de la page de démarrage
+        const openCommand = {
+          Command: 'open',
+          Target: tab.url,
+          Value: '',
+          Description: 'Ouverture automatique de la page de démarrage',
+          Targets: [],
+          timing: 0,
+          timestamp: Date.now(),
+          disabled: false
+        };
+        currentScenario.Commands.push(openCommand);
+        await saveState();
+      }
     }
 
     await chrome.tabs.sendMessage(tabId, { type: 'START_RECORDING' });
