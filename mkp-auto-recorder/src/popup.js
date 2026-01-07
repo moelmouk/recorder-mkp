@@ -697,6 +697,11 @@ function renderCommands() {
           ${cmd.Value ? `<div class="command-timing"><span class="inline-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-4-4L4 16v4z"></path><path d="M13.5 6.5l4 4"></path></svg></span>${escapeHtml(cmd.Value.substring(0, 25))}</div>` : ''}
         </div>
         <div class="command-actions">
+          <button class="cmd-icon-btn btn-play" data-index="${index}" title="Exécuter cette commande" aria-label="Jouer">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+          </button>
           <button class="cmd-icon-btn btn-locate" data-index="${index}" title="Localiser l'élément" aria-label="Localiser">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="7"></circle>
@@ -2541,5 +2546,83 @@ async function init() {
   
   renderCommands();
 }
+
+// Fonction pour exécuter une seule commande
+async function executeSingleCommand(index) {
+  if (state.isPlaying) return;
+  
+  const commands = state.currentScenario.Commands;
+  if (index < 0 || index >= commands.length) return;
+  
+  // Mettre en surbrillance la commande en cours d'exécution
+  const commandItems = elements.commandsList.querySelectorAll('.command-item');
+  commandItems.forEach((item, i) => {
+    item.classList.toggle('executing', i === index);
+  });
+  
+  try {
+    // Envoyer la commande au script de contenu pour exécution
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    
+    // Vérifier si le script de contenu est injecté
+    try {
+      // Essayer d'abord d'injecter le script s'il n'est pas déjà chargé
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content_script.js']
+      });
+    } catch (injectError) {
+      console.log('Le script de contenu est déjà injecté ou une erreur est survenue:', injectError);
+    }
+    
+    // Utiliser un délai pour s'assurer que le script est prêt
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Envoyer le message avec un timeout
+    const response = await new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        reject(new Error('Timeout: La commande a pris trop de temps pour s\'exécuter'));
+      }, 10000); // 10 secondes de timeout
+      
+      chrome.tabs.sendMessage(tab.id, { 
+        action: 'executeCommand', 
+        command: commands[index],
+        index: index
+      }, (response) => {
+        clearTimeout(timeoutId);
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message || 'Erreur inconnue'));
+        } else {
+          resolve(response);
+        }
+      });
+    });
+    
+    if (response && response.success) {
+      showToast('Commande exécutée avec succès', 'success');
+    } else {
+      throw new Error(response?.error || 'Échec de l\'exécution de la commande');
+    }
+    
+  } catch (error) {
+    console.error('Erreur lors de l\'exécution de la commande:', error);
+    showToast(`Erreur: ${error.message}`, 'error');
+  } finally {
+    // Retirer la mise en surbrillance après un court délai pour permettre l'animation
+    setTimeout(() => {
+      commandItems.forEach(item => item.classList.remove('executing'));
+    }, 500);
+  }
+}
+
+// Gestionnaire pour le bouton de lecture d'une commande
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.btn-play')) {
+    const button = e.target.closest('.btn-play');
+    const index = parseInt(button.dataset.index);
+    executeSingleCommand(index);
+    return;
+  }
+});
 
 init();

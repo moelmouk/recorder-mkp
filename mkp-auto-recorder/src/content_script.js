@@ -1263,6 +1263,22 @@
   // ========== MESSAGE LISTENER ==========
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // Gestion de l'action executeCommand
+    if (message.action === 'executeCommand') {
+      console.log('Commande reçue pour exécution:', message.command);
+      executeCommand(message.command)
+        .then(result => {
+          console.log('Commande exécutée avec succès:', result);
+          sendResponse({ success: true, result });
+        })
+        .catch(error => {
+          console.error('Erreur lors de l\'exécution de la commande:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+      return true; // Indique que la réponse sera asynchrone
+    }
+    
+    // Gestion des autres types de messages
     switch (message.type) {
       case 'START_RECORDING':
         startRecording();

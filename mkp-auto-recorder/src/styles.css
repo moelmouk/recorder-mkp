@@ -1574,6 +1574,17 @@ body[data-theme="dark"] [contenteditable].field-highlight {
   transition: var(--transition);
 }
 
+.btn-play {
+  color: #10b981; /* Couleur verte pour le bouton play */
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.btn-play:hover {
+  color: #059669; /* Couleur verte plus foncée au survol */
+  background-color: rgba(16, 185, 129, 0.1);
+  border-color: #10b981;
+}
+
 .cmd-icon-btn svg {
   display: block;
 }
@@ -1596,6 +1607,30 @@ body[data-theme="dark"] [contenteditable].field-highlight {
 
 .command-item:hover .command-actions {
   opacity: 1;
+}
+
+/* Style pour l'état d'exécution d'une commande */
+.command-item.executing {
+  background-color: rgba(16, 185, 129, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.command-item.executing::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 3px;
+  background-color: #10b981;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.5; }
+  50% { opacity: 1; }
+  100% { opacity: 0.5; }
 }
 
 /* ==================== */
