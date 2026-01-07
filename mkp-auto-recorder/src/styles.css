@@ -79,6 +79,95 @@ body {
 }
 
 /* ==================== */
+/* Highlight Effects    */
+/* ==================== */
+
+/* Animation de surbrillance pour les champs en cours de modification */
+@keyframes field-highlight {
+  0% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.3);
+    transform: scale(1.01);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+    transform: scale(1);
+  }
+}
+
+/* Classe pour la surbrillance des champs */
+.field-highlight {
+  position: relative;
+  z-index: 1000;
+  animation: field-highlight 1.5s ease-in-out infinite;
+  transition: all 0.3s ease;
+  border-radius: 4px;
+}
+
+/* Style spécifique pour les champs de formulaire en surbrillance */
+input.field-highlight,
+select.field-highlight,
+textarea.field-highlight,
+[role="textbox"].field-highlight,
+[contenteditable].field-highlight {
+  background-color: rgba(99, 102, 241, 0.05) !important;
+  border-color: var(--primary) !important;
+  outline: none;
+}
+
+/* Style pour les éléments cliquables en surbrillance */
+a.field-highlight,
+button.field-highlight,
+[role="button"].field-highlight {
+  position: relative;
+  z-index: 1001;
+}
+
+/* Style pour les éléments de liste en surbrillance */
+li.field-highlight,
+tr.field-highlight {
+  background-color: rgba(99, 102, 241, 0.05) !important;
+}
+
+/* Style pour le mode sombre */
+body[data-theme="dark"] .field-highlight {
+  animation: field-highlight 1.5s ease-in-out infinite;
+}
+
+body[data-theme="dark"] input.field-highlight,
+body[data-theme="dark"] select.field-highlight,
+body[data-theme="dark"] textarea.field-highlight,
+body[data-theme="dark"] [role="textbox"].field-highlight,
+body[data-theme="dark"] [contenteditable].field-highlight {
+  background-color: rgba(99, 102, 241, 0.1) !important;
+  border-color: var(--primary) !important;
+}
+
+/* Effet de clic sur les éléments */
+.field-highlight-click {
+  position: relative;
+  transform: scale(0.98);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  box-shadow: 0 0 0 2px var(--primary) !important;
+  z-index: 1002;
+}
+
+/* Désactiver l'animation sur les appareils mobiles pour des raisons de performance */
+@media (max-width: 768px) {
+  .field-highlight {
+    animation: none !important;
+    box-shadow: 0 0 0 2px var(--primary) !important;
+  }
+  
+  .field-highlight-click {
+    transform: scale(0.95);
+  }
+}
+
+/* ==================== */
 /* Header               */
 /* ==================== */
 

@@ -480,6 +480,117 @@
     const style = document.createElement('style');
     style.id = 'mkp-recorder-styles';
     style.textContent = `
+      /* Styles de surbrillance modernes */
+      @keyframes pulse-glow {
+        0% { 
+          box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4), 
+                      0 0 0 3px rgba(99, 102, 241, 0.4);
+        }
+        70% {
+          box-shadow: 0 0 0 6px rgba(99, 102, 241, 0), 
+                      0 0 0 12px rgba(99, 102, 241, 0);
+        }
+        100% { 
+          box-shadow: 0 0 0 0 rgba(99, 102, 241, 0), 
+                      0 0 0 0 rgba(99, 102, 241, 0);
+        }
+      }
+      
+      .field-highlight {
+        position: relative;
+        z-index: 9999 !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border-radius: 4px;
+        animation: pulse-glow 2s ease-out;
+      }
+      
+      .field-highlight::before {
+        content: '';
+        position: absolute;
+        top: -3px;
+        left: -3px;
+        right: -3px;
+        bottom: -3px;
+        border: 2px solid #6366f1;
+        border-radius: 6px;
+        pointer-events: none;
+        z-index: 10000;
+        animation: pulse-glow 2s ease-out;
+      }
+      
+      .field-highlight-click {
+        transform: scale(0.98);
+        transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.5) !important;
+      }
+      
+      /* Amélioration pour les champs de formulaire */
+      input.field-highlight,
+      select.field-highlight,
+      textarea.field-highlight,
+      [role="textbox"].field-highlight,
+      [contenteditable].field-highlight {
+        background-color: rgba(99, 102, 241, 0.05) !important;
+        border-color: #6366f1 !important;
+        box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.3) !important;
+      }
+      
+      /* Style pour les boutons et liens */
+      button.field-highlight,
+      a.field-highlight,
+      [role="button"].field-highlight {
+        position: relative;
+        z-index: 10001;
+        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.5) !important;
+      }
+      
+      /* Style pour les cases à cocher et boutons radio */
+      [type="checkbox"].field-highlight,
+      [type="radio"].field-highlight {
+        position: relative;
+      }
+      
+      [type="checkbox"].field-highlight::after,
+      [type="radio"].field-highlight::after {
+        content: '';
+        position: absolute;
+        top: -4px;
+        left: -4px;
+        right: -4px;
+        bottom: -4px;
+        border: 2px solid #6366f1;
+        border-radius: 4px;
+        pointer-events: none;
+        z-index: 10000;
+      }
+      
+      /* Désactiver l'animation sur mobile pour les performances */
+      @media (max-width: 768px) {
+        .field-highlight {
+          animation: none !important;
+          box-shadow: 0 0 0 2px #6366f1 !important;
+        }
+        .field-highlight::before {
+          display: none;
+        }
+      }
+      /* Animation de surbrillance pour les champs cliqués */
+      @keyframes field-click {
+        0% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(0.98); opacity: 0.8; }
+        100% { transform: scale(1); opacity: 1; }
+      }
+      
+      /* Style pour l'effet de clic */
+      .field-highlight-click {
+        animation: field-click 0.3s ease-out;
+      }
+      
+      .field-highlight-click {
+        transform: scale(0.95) !important;
+        transition: transform 0.2s ease !important;
+      }
+      
       .mkp-step-timer {
         color: #0066cc;
         font-size: 14px;
@@ -738,10 +849,163 @@
     document.head.appendChild(style);
   }
 
-  function highlightElement(element) {
-    if (!element) return;
-    element.classList.add('mkp-highlight');
-    setTimeout(() => element.classList.remove('mkp-highlight'), 300);
+  let currentHighlightedElement = null;
+  let highlightTimeout = null;
+  
+  // Fonction pour supprimer toutes les surbrillances existantes
+  function removeAllHighlights() {
+    try {
+      // Sélectionner et nettoyer tous les éléments avec la classe field-highlight
+      document.querySelectorAll('.field-highlight').forEach(el => {
+        if (el && el.classList) {
+          // Supprimer la classe de surbrillance
+          el.classList.remove('field-highlight');
+          
+          // Réinitialiser les styles
+          el.style.removeProperty('outline');
+          el.style.removeProperty('outline-offset');
+          el.style.removeProperty('z-index');
+          el.style.removeProperty('position');
+          el.style.removeProperty('transition');
+          
+          // Supprimer les éventuels pseudo-éléments ajoutés
+          if (el.shadowRoot) {
+            const shadowHighlight = el.shadowRoot.querySelector('.field-highlight');
+            if (shadowHighlight) {
+              shadowHighlight.remove();
+            }
+          }
+        }
+      });
+      
+      // Nettoyer également les éléments dans les Shadow DOM
+      document.querySelectorAll('*').forEach(el => {
+        if (el.shadowRoot) {
+          el.shadowRoot.querySelectorAll('.field-highlight').forEach(shadowEl => {
+            shadowEl.remove();
+          });
+        }
+      });
+      
+      // Annuler le timeout précédent s'il existe
+      if (highlightTimeout) {
+        clearTimeout(highlightTimeout);
+        highlightTimeout = null;
+      }
+      
+      currentHighlightedElement = null;
+    } catch (e) {
+      console.error('Erreur lors du nettoyage des surbrillances:', e);
+    }
+  }
+
+  function highlightElement(element, duration = 2000) {
+    console.log('Highlighting element:', element);
+    if (!element || !element.classList) {
+      console.error('Element invalide pour la surbrillance:', element);
+      return;
+    }
+    
+    // S'assurer que les styles sont injectés
+    if (!document.getElementById('mkp-recorder-styles')) {
+      injectStyles();
+    }
+    
+    // Supprimer toutes les surbrillances existantes
+    removeAllHighlights();
+    
+    // Supprimer toutes les surbrillances existantes
+    removeAllHighlights();
+    
+    // Supprimer la surbrillance précédente
+    if (currentHighlightedElement && currentHighlightedElement.classList) {
+      currentHighlightedElement.classList.remove('field-highlight');
+    }
+    
+    // Annuler le timeout précédent s'il existe
+    if (highlightTimeout) {
+      clearTimeout(highlightTimeout);
+    }
+    
+    // Vérifier si l'élément est toujours dans le DOM
+    if (!document.body.contains(element)) {
+      console.error('L\'élément n\'est plus dans le DOM');
+      return;
+    }
+    
+    // Appliquer la nouvelle surbrillance
+    currentHighlightedElement = element;
+    
+    // Ajouter la classe de surbrillance
+    element.classList.add('field-highlight');
+    
+    // Ajouter des styles initiaux pour la transition
+    element.style.setProperty('transition', 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', 'important');
+    element.style.setProperty('z-index', '9999', 'important');
+    
+    // Pour les éléments qui n'ont pas déjà une position définie
+    if (window.getComputedStyle(element).position === 'static') {
+      element.style.setProperty('position', 'relative', 'important');
+    }
+    
+    // Appliquer la classe de surbrillance avec un léger délai
+    setTimeout(() => {
+      element.classList.add('field-highlight');
+      
+      // Ajouter un effet de clic
+      element.classList.add('field-highlight-click');
+      setTimeout(() => {
+        element.classList.remove('field-highlight-click');
+      }, 300);
+    }, 0);
+    
+    // Faire défiler l'élément dans la vue si nécessaire
+    try {
+      element.scrollIntoView({ 
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest' 
+      });
+    } catch (e) {
+      console.log('Erreur lors du défilement vers l\'élément:', e);
+    }
+    
+    // Supprimer la surbrillance après la durée spécifiée
+    highlightTimeout = setTimeout(() => {
+      try {
+        if (element && element.classList) {
+          // Supprimer la classe de surbrillance
+          element.classList.remove('field-highlight');
+          
+          // Réinitialiser les styles
+          element.style.removeProperty('outline');
+          element.style.removeProperty('outline-offset');
+          element.style.removeProperty('z-index');
+          
+          // Ne pas réinitialiser la position si elle était déjà définie
+          if (element.style.position === 'relative' && window.getComputedStyle(element).position === 'static') {
+            element.style.removeProperty('position');
+          }
+          
+          // Supprimer la bordure en pointillés
+          const borders = element.getElementsByClassName('mkp-highlight-border');
+          Array.from(borders).forEach(border => {
+            if (border && border.parentNode) {
+              border.parentNode.removeChild(border);
+            }
+          });
+          
+          // Forcer le recalcul du style pour s'assurer que les changements sont appliqués
+          element.offsetHeight;
+        }
+      } catch (e) {
+        console.error('Erreur lors de la suppression de la surbrillance:', e);
+      } finally {
+        if (currentHighlightedElement === element) {
+          currentHighlightedElement = null;
+        }
+      }
+    }, duration);
   }
 
   // ========== RECORDING STATE ==========
@@ -1229,8 +1493,11 @@
         // Vérifier si c'est un clic sur une option de profession
         if (isProfessionOption) {
           // IMPORTANT: on doit réellement cliquer sur l'option pour que ng-select / Angular mette à jour son modèle.
-          try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
-          highlightElement(el);
+          highlightElement(el, 3000);
+
+          // Ajouter une classe temporaire pour le clic
+          el.classList.add('field-highlight-click');
+          setTimeout(() => el.classList.remove('field-highlight-click'), 500);
 
           ['mousedown', 'mouseup', 'click'].forEach(eventType => {
             if (eventType === 'click' && typeof el.click === 'function') {
@@ -1272,8 +1539,11 @@
           return { success: true };
         }
         
-        try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
-        highlightElement(el);
+        highlightElement(el, 3000);
+        
+        // Ajouter une classe temporaire pour le clic
+        el.classList.add('field-highlight-click');
+        setTimeout(() => el.classList.remove('field-highlight-click'), 500);
         
         ['mousedown', 'mouseup', 'click'].forEach(eventType => {
           if (eventType === 'click' && typeof el.click === 'function') {
@@ -1291,8 +1561,7 @@
         const el = findElementWithFallback(target, targets);
         if (!el) throw new Error(`Élément non trouvé: ${target.substring(0, 50)}`);
         
-        try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
-        highlightElement(el);
+        highlightElement(el, 3000);
         focusIfEditable(el);
         
         // Vider le champ
@@ -1344,7 +1613,7 @@
         const el = findElementWithFallback(target, targets);
         if (!el) throw new Error(`Élément non trouvé: ${target.substring(0, 50)}`);
         
-        highlightElement(el);
+        highlightElement(el, 3000);
         const options = Array.from(el.getElementsByTagName('option'));
         let option = options.find(op => domText(op).trim() === value || op.text === value || op.value === value);
         
@@ -1358,7 +1627,7 @@
       case 'check': {
         const el = findElementWithFallback(target, targets);
         if (!el) throw new Error(`Élément non trouvé: ${target.substring(0, 50)}`);
-        highlightElement(el);
+        highlightElement(el, 3000);
         el.checked = true;
         el.dispatchEvent(new Event('change', { bubbles: true }));
         return { success: true };
@@ -1367,7 +1636,7 @@
       case 'uncheck': {
         const el = findElementWithFallback(target, targets);
         if (!el) throw new Error(`Élément non trouvé: ${target.substring(0, 50)}`);
-        highlightElement(el);
+        highlightElement(el, 3000);
         el.checked = false;
         el.dispatchEvent(new Event('change', { bubbles: true }));
         return { success: true };
