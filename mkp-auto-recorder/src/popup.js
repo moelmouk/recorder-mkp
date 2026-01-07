@@ -1773,6 +1773,40 @@ function closeGroupPlayModal() {
   state.playingGroupId = null;
 }
 
+// ==================== HIGHLIGHT STYLE ====================
+
+// Load highlight style from storage
+function loadHighlightStyle() {
+  chrome.storage.sync.get(['highlightStyle'], function(result) {
+    const style = result.highlightStyle || 'modern';
+    // Update active state in UI
+    document.querySelectorAll('.highlight-option').forEach(option => {
+      option.classList.toggle('active', option.dataset.style === style);
+    });
+  });
+}
+
+// Setup highlight style selector
+function setupHighlightStyleSelector() {
+  const options = document.querySelectorAll('.highlight-option');
+  
+  options.forEach(option => {
+    option.addEventListener('click', () => {
+      const style = option.dataset.style;
+      if (!style) return;
+      
+      // Update active state
+      options.forEach(opt => opt.classList.remove('active'));
+      option.classList.add('active');
+      
+      // Save to storage
+      chrome.storage.sync.set({ highlightStyle: style }, () => {
+        showToast(`Style de surbrillance défini sur: ${style}`, 'success');
+      });
+    });
+  });
+}
+
 // ==================== SETTINGS (BACKUP/RESTORE) ====================
 
 if (elements.btnSettings) {
@@ -2290,15 +2324,23 @@ async function init() {
   console.log('Initialisation de la popup...');
   displayVersion();
 
+  // Initialize settings tabs
   initSettingsTabs();
   if (elements.themeSelect) {
     elements.themeSelect.addEventListener('change', async () => {
       await saveTheme(elements.themeSelect.value);
     });
   }
-  await loadTheme();
+  // Theme management
+  loadTheme();
   
-  // Initialiser l'état des groupes dépliés
+  // Load highlight style
+  loadHighlightStyle();
+  
+  // Setup highlight style selector
+  setupHighlightStyleSelector();
+  
+  // Initialize expanded groups
   state.expandedGroups = state.expandedGroups || {};
   
   await loadData();

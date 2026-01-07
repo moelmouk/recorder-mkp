@@ -376,6 +376,40 @@
           <div class="modal-tab-content">
             <div class="modal-tab-pane active" id="settings-tab-backup">
               <div class="form-group">
+                <label>Thème</label>
+                <div class="theme-selector">
+                  <button class="theme-option" data-theme="light">
+                    <span class="theme-preview light"></span>
+                    <span>Clair</span>
+                  </button>
+                  <button class="theme-option" data-theme="dark">
+                    <span class="theme-preview dark"></span>
+                    <span>Sombre</span>
+                  </button>
+                  <button class="theme-option" data-theme="system">
+                    <span class="theme-preview system"></span>
+                    <span>Système</span>
+                  </button>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Style de surbrillance</label>
+                <div class="highlight-style-selector">
+                  <div class="highlight-option" data-style="modern">
+                    <div class="highlight-preview modern"></div>
+                    <span>Moderne</span>
+                  </div>
+                  <div class="highlight-option" data-style="classic">
+                    <div class="highlight-preview classic"></div>
+                    <span>Classique</span>
+                  </div>
+                  <div class="highlight-option" data-style="futurist">
+                    <div class="highlight-preview futurist"></div>
+                    <span>Futuriste</span>
+                  </div>
+                </div>
+              </div>
+              <div class="form-group">
                 <label>Backup (export JSON)</label>
                 <textarea id="backupOutput" readonly placeholder="Cliquez sur Backup pour générer le JSON..."></textarea>
               </div>

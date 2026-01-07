@@ -574,16 +574,69 @@
           display: none;
         }
       }
-      /* Animation de surbrillance pour les champs cliqués */
+      /* ===== STYLES DE SURBRILLANCE ===== */
+      
+      /* Style 1 - Moderne & Épuré */
+      .highlight-style-modern {
+        position: relative;
+        z-index: 9999 !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border-radius: 4px;
+        animation: pulse-glow 2s ease-out infinite;
+      }
+      
+      .highlight-style-modern::before {
+        content: '';
+        position: absolute;
+        top: -2px;
+        left: -2px;
+        right: -2px;
+        bottom: -2px;
+        border: 2px solid #6366f1;
+        border-radius: 4px;
+        pointer-events: none;
+        z-index: 10000;
+      }
+      
+      /* Style 2 - Classique & Évident */
+      .highlight-style-classic {
+        position: relative;
+        z-index: 9999 !important;
+        background-color: rgba(255, 255, 0, 0.2) !important;
+        outline: 3px solid #ffcc00 !important;
+        outline-offset: 2px !important;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1) !important;
+      }
+      
+      /* Style 3 - Futuriste */
+      .highlight-style-futurist {
+        position: relative;
+        z-index: 9999 !important;
+        border-radius: 4px;
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1)) !important;
+        box-shadow: 0 0 15px rgba(99, 102, 241, 0.5), 
+                    inset 0 0 10px rgba(255, 255, 255, 0.5);
+        animation: neon-pulse 1.5s ease-in-out infinite;
+      }
+      
+      @keyframes neon-pulse {
+        0%, 100% { box-shadow: 0 0 10px rgba(99, 102, 241, 0.5), 
+                             0 0 20px rgba(99, 102, 241, 0.3),
+                             inset 0 0 10px rgba(255, 255, 255, 0.5); }
+        50% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.8), 
+                         0 0 30px rgba(99, 102, 241, 0.5),
+                         inset 0 0 15px rgba(255, 255, 255, 0.8); }
+      }
+      
+      /* Animation de clic commune */
       @keyframes field-click {
         0% { transform: scale(1); opacity: 1; }
         50% { transform: scale(0.98); opacity: 0.8; }
         100% { transform: scale(1); opacity: 1; }
       }
       
-      /* Style pour l'effet de clic */
       .field-highlight-click {
-        animation: field-click 0.3s ease-out;
+        animation: field-click 0.3s ease-out !important;
       }
       
       .field-highlight-click {
@@ -851,48 +904,87 @@
 
   let currentHighlightedElement = null;
   let highlightTimeout = null;
+  let highlightStyle = 'modern'; // Valeur par défaut
   
+  // Charger le style de surbrillance depuis le stockage
+  chrome.storage.sync.get(['highlightStyle'], function(result) {
+    if (result.highlightStyle) {
+      highlightStyle = result.highlightStyle;
+    }
+  });
+  
+  // Écouter les changements de style
+  chrome.storage.onChanged.addListener(function(changes, namespace) {
+    if (changes.highlightStyle) {
+      highlightStyle = changes.highlightStyle.newValue;
+    }
+  });
+  
+  // Écouter les messages du script de fond
+  document.addEventListener('highlightStyleChanged', (e) => {
+    if (e.detail && e.detail.style) {
+      highlightStyle = e.detail.style;
+    }
+  });
+
   // Fonction pour supprimer toutes les surbrillances existantes
   function removeAllHighlights() {
     try {
-      // Sélectionner et nettoyer tous les éléments avec la classe field-highlight
-      document.querySelectorAll('.field-highlight').forEach(el => {
-        if (el && el.classList) {
-          // Supprimer la classe de surbrillance
-          el.classList.remove('field-highlight');
-          
-          // Réinitialiser les styles
-          el.style.removeProperty('outline');
-          el.style.removeProperty('outline-offset');
-          el.style.removeProperty('z-index');
-          el.style.removeProperty('position');
-          el.style.removeProperty('transition');
-          
-          // Supprimer les éventuels pseudo-éléments ajoutés
-          if (el.shadowRoot) {
-            const shadowHighlight = el.shadowRoot.querySelector('.field-highlight');
-            if (shadowHighlight) {
-              shadowHighlight.remove();
+      // Nettoyer tous les styles de surbrillance
+      const highlightClasses = [
+        'field-highlight', 
+        'highlight-style-modern',
+        'highlight-style-classic',
+        'highlight-style-futurist',
+        'field-highlight-click'
+      ];
+
+      // Parcourir tous les éléments avec des classes de surbrillance
+      highlightClasses.forEach(className => {
+        document.querySelectorAll(`.${className}`).forEach(el => {
+          if (el && el.classList) {
+            // Supprimer la classe de surbrillance
+            el.classList.remove(className);
+            
+            // Réinitialiser les styles
+            const stylesToRemove = [
+              'outline', 'outline-offset', 'z-index', 'position', 
+              'transition', 'box-shadow', 'background', 'background-color',
+              'animation', 'transform'
+            ];
+            
+            stylesToRemove.forEach(prop => {
+              el.style.removeProperty(prop);
+            });
+            
+            // Pour les éléments qui avaient une position relative ajoutée
+            if (el.style.position === 'relative' && window.getComputedStyle(el).position === 'static') {
+              el.style.removeProperty('position');
             }
           }
-        }
+        });
       });
-      
-      // Nettoyer également les éléments dans les Shadow DOM
+
+      // Nettoyer également dans les Shadow DOM
       document.querySelectorAll('*').forEach(el => {
         if (el.shadowRoot) {
-          el.shadowRoot.querySelectorAll('.field-highlight').forEach(shadowEl => {
-            shadowEl.remove();
+          highlightClasses.forEach(className => {
+            el.shadowRoot.querySelectorAll(`.${className}`).forEach(shadowEl => {
+              if (shadowEl && shadowEl.classList) {
+                shadowEl.classList.remove(className);
+                shadowEl.removeAttribute('style');
+              }
+            });
           });
         }
       });
-      
+
       // Annuler le timeout précédent s'il existe
       if (highlightTimeout) {
         clearTimeout(highlightTimeout);
         highlightTimeout = null;
       }
-      
+
       currentHighlightedElement = null;
     } catch (e) {
       console.error('Erreur lors du nettoyage des surbrillances:', e);
@@ -900,7 +992,7 @@
   }
 
   function highlightElement(element, duration = 2000) {
-    console.log('Highlighting element:', element);
+    console.log('Highlighting element:', element, 'with style:', highlightStyle);
     if (!element || !element.classList) {
       console.error('Element invalide pour la surbrillance:', element);
       return;
@@ -914,30 +1006,12 @@
     // Supprimer toutes les surbrillances existantes
     removeAllHighlights();
     
-    // Supprimer toutes les surbrillances existantes
-    removeAllHighlights();
-    
-    // Supprimer la surbrillance précédente
-    if (currentHighlightedElement && currentHighlightedElement.classList) {
-      currentHighlightedElement.classList.remove('field-highlight');
-    }
-    
-    // Annuler le timeout précédent s'il existe
-    if (highlightTimeout) {
-      clearTimeout(highlightTimeout);
-    }
-    
-    // Vérifier si l'élément est toujours dans le DOM
-    if (!document.body.contains(element)) {
-      console.error('L\'élément n\'est plus dans le DOM');
-      return;
-    }
-    
-    // Appliquer la nouvelle surbrillance
+    // Mettre à jour l'élément actuellement surligné
     currentHighlightedElement = element;
     
-    // Ajouter la classe de surbrillance
-    element.classList.add('field-highlight');
+    // Appliquer le style de surbrillance sélectionné
+    const styleClass = `highlight-style-${highlightStyle}`;
+    element.classList.add(styleClass);
     
     // Ajouter des styles initiaux pour la transition
     element.style.setProperty('transition', 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', 'important');
@@ -950,7 +1024,11 @@
     
     // Appliquer la classe de surbrillance avec un léger délai
     setTimeout(() => {
-      element.classList.add('field-highlight');
+      // Supprimer tous les styles de surbrillance existants
+      element.classList.remove('highlight-style-modern', 'highlight-style-classic', 'highlight-style-futurist');
+      
+      // Ajouter le style sélectionné
+      element.classList.add(styleClass);
       
       // Ajouter un effet de clic
       element.classList.add('field-highlight-click');
