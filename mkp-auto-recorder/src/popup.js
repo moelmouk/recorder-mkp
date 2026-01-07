@@ -32,6 +32,9 @@ const elements = {
   sourceCloseBtn: document.getElementById('sourceCloseBtn'),
   sourceJson: document.getElementById('sourceJson'),
   sourceCopy: document.getElementById('sourceCopy'),
+  sourceJsonEditor: document.getElementById('sourceJsonEditor'),
+  sourceSave: document.getElementById('sourceSave'),
+  sourceError: document.getElementById('sourceError'),
   
   // Recorder Tab
   statusBar: document.getElementById('statusBar'),
@@ -2412,7 +2415,8 @@ async function init() {
       try {
         const data = buildCurrentScenarioJson();
         const json = JSON.stringify(data, null, 2);
-        if (elements.sourceJson) elements.sourceJson.textContent = json;
+        if (elements.sourceJsonEditor) elements.sourceJsonEditor.value = json;
+        if (elements.sourceError) { elements.sourceError.style.display = 'none'; elements.sourceError.textContent = ''; }
         if (elements.sourceModal) elements.sourceModal.classList.add('active');
       } catch (e) {
         console.error('Erreur génération code source:', e);
@@ -2429,7 +2433,7 @@ async function init() {
   if (elements.sourceCopy) {
     elements.sourceCopy.addEventListener('click', async () => {
       try {
-        const text = elements.sourceJson ? elements.sourceJson.textContent : '';
+        const text = elements.sourceJsonEditor ? elements.sourceJsonEditor.value : '';
         if (!text) {
           showToast('Rien à copier', 'error');
           return;
@@ -2439,6 +2443,91 @@ async function init() {
       } catch (e) {
         console.error('Copy failed', e);
         showToast('Impossible de copier', 'error');
+      }
+    });
+  }
+  if (elements.sourceSave) {
+    elements.sourceSave.addEventListener('click', () => {
+      const showInlineError = (msg) => {
+        if (elements.sourceError) {
+          elements.sourceError.textContent = msg || 'Erreur inconnue';
+          elements.sourceError.style.display = 'block';
+        }
+      };
+      try {
+        const raw = elements.sourceJsonEditor ? elements.sourceJsonEditor.value.trim() : '';
+        if (!raw) {
+          showInlineError('Veuillez saisir du JSON valide');
+          showToast('JSON vide', 'error');
+          return;
+        }
+        let data;
+        try {
+          data = JSON.parse(raw);
+        } catch (e) {
+          showInlineError('JSON invalide');
+          showToast('JSON invalide', 'error');
+          return;
+        }
+        // Validation de base
+        if (!data || typeof data !== 'object') {
+          showInlineError('Format non reconnu');
+          showToast('Format non reconnu', 'error');
+          return;
+        }
+        const name = typeof data.Name === 'string' && data.Name.trim() ? data.Name.trim() : null;
+        const commandsIn = Array.isArray(data.Commands) ? data.Commands : null;
+        if (!name) {
+          showInlineError('Champ "Name" requis');
+          showToast('Champ Name requis', 'error');
+          return;
+        }
+        if (!commandsIn) {
+          showInlineError('Champ "Commands" doit être un tableau');
+          showToast('Commands doit être un tableau', 'error');
+          return;
+        }
+        // Normalisation des commandes
+        const commands = commandsIn.map((c, idx) => {
+          const cmd = c || {};
+          const Command = (cmd.Command ?? '').toString().trim();
+          const Target = (cmd.Target ?? '').toString().trim();
+          const ValueRaw = cmd.Value;
+          const timingRaw = cmd.timing;
+          const out = { Command, Target };
+          if (ValueRaw !== undefined && ValueRaw !== null && String(ValueRaw).trim() !== '') {
+            out.Value = String(ValueRaw);
+          }
+          const timingNum = typeof timingRaw === 'number' ? timingRaw : Number.isFinite(Number(timingRaw)) ? Number(timingRaw) : undefined;
+          if (typeof timingNum === 'number' && Number.isFinite(timingNum)) {
+            out.timing = timingNum;
+          }
+          return out;
+        }).filter(c => c.Command || c.Target);
+        // Confirmation si vide
+        if (commands.length === 0) {
+          const ok = confirm('Le tableau Commands est vide. Remplacer le scénario actuel par un scénario vide ?');
+          if (!ok) return;
+        }
+        // Mettre à jour l'état courant (mémoire uniquement)
+        const current = state.currentScenario || createEmptyScenario();
+        state.currentScenario = {
+          ...current,
+          Name: name,
+          CreationDate: (typeof data.CreationDate === 'string' && data.CreationDate.trim()) ? data.CreationDate : (current.CreationDate || new Date().toISOString().split('T')[0]),
+          Commands: commands
+        };
+        // Mettre à jour l'UI
+        if (elements.scenarioName) elements.scenarioName.value = state.currentScenario.Name;
+        renderCommands();
+        syncToBackground?.();
+        // Fermer et notifier
+        if (elements.sourceModal) elements.sourceModal.classList.remove('active');
+        showToast('Scénario mis à jour (mémoire)', 'success');
+      } catch (err) {
+        console.error('Erreur lors de l\'enregistrement du JSON source', err);
+        showInlineError('Erreur inattendue');
+        showToast('Erreur lors de l\'enregistrement', 'error');
       }
     });
   }

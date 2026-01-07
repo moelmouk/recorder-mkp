@@ -551,12 +551,14 @@
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label>JSON</label>
-          <pre id="sourceJson" class="code-block" style="max-height: 320px; overflow: auto; white-space: pre; background: var(--bg-tertiary); padding: 12px; border:1px solid var(--border-color); border-radius: 8px;"></pre>
+          <label for="sourceJsonEditor">JSON (éditable)</label>
+          <textarea id="sourceJsonEditor" rows="16" class="form-control" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; background: var(--bg-tertiary); padding: 12px; border:1px solid var(--border-color); border-radius: 8px; resize: vertical;"></textarea>
+          <div id="sourceError" style="display:none; color: var(--danger); margin-top: 8px; font-size: 12px;"></div>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" id="sourceCopy">Copier</button>
+        <button class="btn" id="sourceSave">Enregistrer</button>
         <button class="btn btn-primary" id="sourceCloseBtn">Fermer</button>
       </div>
     </div>
