@@ -114,13 +114,18 @@
                 <rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor"/>
               </svg>
             </button>
-          </div>
+           
           
           <!-- Vertical Separator -->
           <div class="vertical-separator"></div>
           
-          <!-- Action Buttons -->
-          <div class="action-buttons">
+         
+            <button class="btn-icon-only btn-secondary" id="btnShowSource" title="Afficher le code source">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="16 18 22 12 16 6"></polyline>
+                <polyline points="8 6 2 12 8 18"></polyline>
+              </svg>
+            </button>
             <button class="btn-icon-only btn-primary" id="btnPlay" disabled title="Rejouer le scénario">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10" fill="currentColor" fill-opacity="0.1"/>
@@ -537,6 +542,26 @@
     </div>
   </div>
 
+  <!-- Source Code Modal -->
+  <div class="modal" id="sourceModal">
+    <div class="modal-content" style="max-width: 720px;">
+      <div class="modal-header">
+        <h3>Code source du scénario</h3>
+        <button class="modal-close" id="sourceClose">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>JSON</label>
+          <pre id="sourceJson" class="code-block" style="max-height: 320px; overflow: auto; white-space: pre; background: var(--bg-tertiary); padding: 12px; border:1px solid var(--border-color); border-radius: 8px;"></pre>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="sourceCopy">Copier</button>
+        <button class="btn btn-primary" id="sourceCloseBtn">Fermer</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal de collage de scénario -->
   <div class="modal" id="pasteModal">
     <div class="modal-content" style="max-width: 600px;">
@@ -547,7 +572,17 @@
       <div class="modal-body">
         <div class="form-group">
           <label for="scenarioJson">Collez le JSON du scénario :</label>
-          <textarea id="scenarioJson" rows="15" class="form-control" placeholder="{\n  \"Name\": \"Nom du scénario\",\n  \"CreationDate\": \"2024-01-01\",\n  \"Commands\": [\n    {\n      \"Command\": \"type\",\n      \"Target\": \"id=example\",\n      \"Value\": \"valeur\"\n    }\n  ]\n}"></textarea>
+          <textarea id="scenarioJson" rows="15" class="form-control" placeholder='{
+  "Name": "Nom du scénario",
+  "CreationDate": "2024-01-01",
+  "Commands": [
+    {
+      "Command": "type",
+      "Target": "id=example",
+      "Value": "valeur"
+    }
+  ]
+}'></textarea>
         </div>
         <div class="form-group">
           <label for="pasteGroup">Groupe (optionnel) :</label>

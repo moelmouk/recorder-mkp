@@ -850,6 +850,19 @@ body[data-theme="dark"] [contenteditable].field-highlight {
   color: white;
 }
 
+/* Style pour le bouton d'affichage du code source */
+#btnShowSource {
+  color: #3b82f6; /* Bleu vif */
+  background-color: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+#btnShowSource:hover:not(:disabled) {
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #1d4ed8; /* Bleu plus foncé au survol */
+  border-color: #3b82f6;
+}
+
 /* Conteneur des boutons */
 .action-buttons-container {
   display: flex;

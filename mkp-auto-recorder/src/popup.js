@@ -26,8 +26,16 @@ const elements = {
   helpClose: document.getElementById('helpClose'),
   helpCloseBtn: document.getElementById('helpCloseBtn'),
   
+  // Source Code Modal
+  sourceModal: document.getElementById('sourceModal'),
+  sourceClose: document.getElementById('sourceClose'),
+  sourceCloseBtn: document.getElementById('sourceCloseBtn'),
+  sourceJson: document.getElementById('sourceJson'),
+  sourceCopy: document.getElementById('sourceCopy'),
+  
   // Recorder Tab
   statusBar: document.getElementById('statusBar'),
+  btnShowSource: document.getElementById('btnShowSource'),
   scenarioName: document.getElementById('scenarioName'),
   scenarioGroup: document.getElementById('scenarioGroup'),
   appendRecording: document.getElementById('appendRecording'),
@@ -165,6 +173,30 @@ function createEmptyScenario() {
     CreationDate: new Date().toISOString().split('T')[0],
     groupId: '',
     Commands: []
+  };
+}
+
+// Build a clean JSON representation of the current scenario
+function buildCurrentScenarioJson() {
+  const scenario = state.currentScenario || createEmptyScenario();
+  const rawCommands = Array.isArray(scenario.Commands) ? scenario.Commands : [];
+
+  const commands = rawCommands
+    .filter(cmd => !cmd?.disabled)
+    .map(cmd => {
+      const out = {
+        Command: cmd.Command || '',
+        Target: cmd.Target || ''
+      };
+      if (cmd.Value) out.Value = cmd.Value;
+      if (typeof cmd.timing === 'number') out.timing = cmd.timing;
+      return out;
+    });
+
+  return {
+    Name: scenario.Name || 'Scénario',
+    CreationDate: scenario.CreationDate || new Date().toISOString().split('T')[0],
+    Commands: commands
   };
 }
 
@@ -2369,7 +2401,47 @@ async function init() {
     if (elements.helpModal && e.target === elements.helpModal) {
       elements.helpModal.classList.remove('active');
     }
+    if (elements.sourceModal && e.target === elements.sourceModal) {
+      elements.sourceModal.classList.remove('active');
+    }
   });
+
+  // Source code modal handlers
+  if (elements.btnShowSource) {
+    elements.btnShowSource.addEventListener('click', () => {
+      try {
+        const data = buildCurrentScenarioJson();
+        const json = JSON.stringify(data, null, 2);
+        if (elements.sourceJson) elements.sourceJson.textContent = json;
+        if (elements.sourceModal) elements.sourceModal.classList.add('active');
+      } catch (e) {
+        console.error('Erreur génération code source:', e);
+        showToast('Impossible d\'afficher le code source', 'error');
+      }
+    });
+  }
+  if (elements.sourceClose) {
+    elements.sourceClose.addEventListener('click', () => elements.sourceModal?.classList.remove('active'));
+  }
+  if (elements.sourceCloseBtn) {
+    elements.sourceCloseBtn.addEventListener('click', () => elements.sourceModal?.classList.remove('active'));
+  }
+  if (elements.sourceCopy) {
+    elements.sourceCopy.addEventListener('click', async () => {
+      try {
+        const text = elements.sourceJson ? elements.sourceJson.textContent : '';
+        if (!text) {
+          showToast('Rien à copier', 'error');
+          return;
+        }
+        await navigator.clipboard.writeText(text);
+        showToast('Code source copié', 'success');
+      } catch (e) {
+        console.error('Copy failed', e);
+        showToast('Impossible de copier', 'error');
+      }
+    });
+  }
   
   if (state.currentScenario.Name) {
     elements.scenarioName.value = state.currentScenario.Name;
