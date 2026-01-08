@@ -46,6 +46,7 @@ const elements = {
   btnStart: document.getElementById('btnStart'),
   btnStop: document.getElementById('btnStop'),
   btnPlay: document.getElementById('btnPlay'),
+  btnPlayAll: document.getElementById('btnPlayAll'),
   btnSave: document.getElementById('btnSave'),
   btnClear: document.getElementById('btnClear'),
   btnAddCommand: document.getElementById('btnAddCommand'),
@@ -167,7 +168,8 @@ const state = {
   editingCommandIndex: -1,
   editingScenarioId: null,
   playingGroupId: null,
-  logs: []
+  logs: [],
+  isPlaying: false
 };
 
 function createEmptyScenario() {
@@ -502,6 +504,54 @@ elements.btnStop.addEventListener('click', async () => {
 
 // ==================== PLAYBACK ====================
 
+function waitMs(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function executeAllCommands() {
+  if (state.isPlaying) return;
+
+  const commands = Array.isArray(state.currentScenario?.Commands) ? state.currentScenario.Commands : [];
+  if (commands.length === 0) return;
+
+  state.isPlaying = true;
+  showStatus('playing', 'Lecture séquentielle en cours...');
+  resetCommandProgress();
+
+  if (elements.btnPlayAll) elements.btnPlayAll.disabled = true;
+  if (elements.btnPlay) elements.btnPlay.disabled = true;
+  if (elements.btnStart) elements.btnStart.disabled = true;
+
+  try {
+    let playedCount = 0;
+    const totalToPlay = commands.filter(cmd => !cmd?.disabled).length;
+    if (totalToPlay === 0) {
+      showStatus('error', 'Aucune action active à lire');
+      return;
+    }
+
+    for (let i = 0; i < commands.length; i++) {
+      if (commands[i]?.disabled) continue;
+
+      playedCount++;
+      updateGlobalProgress(playedCount, totalToPlay);
+      showStatus('playing', `Lecture ${playedCount}/${totalToPlay}...`);
+
+      await executeSingleCommand(i, { bypassPlayingGuard: true });
+      await waitMs(500);
+    }
+
+    updateGlobalProgress(totalToPlay, totalToPlay);
+    showStatus('success', 'Lecture séquentielle terminée');
+  } finally {
+    state.isPlaying = false;
+    if (elements.btnPlayAll) elements.btnPlayAll.disabled = state.currentScenario.Commands.length === 0;
+    if (elements.btnPlay) elements.btnPlay.disabled = state.currentScenario.Commands.length === 0;
+    if (elements.btnStart) elements.btnStart.disabled = false;
+    clearCommandHighlight();
+  }
+}
+
 elements.btnPlay.addEventListener('click', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !tab.id) {
@@ -540,6 +590,12 @@ elements.btnPlay.addEventListener('click', async () => {
 
   pollPlaybackState();
 });
+
+if (elements.btnPlayAll) {
+  elements.btnPlayAll.addEventListener('click', async () => {
+    await executeAllCommands();
+  });
+}
 
 function updateGlobalProgress(currentIndex, totalCommands) {
   const progressBar = document.getElementById('commandProgress');
@@ -699,10 +755,12 @@ function renderCommands() {
       </div>
     `;
     elements.btnPlay.disabled = true;
+    if (elements.btnPlayAll) elements.btnPlayAll.disabled = true;
     return;
   }
 
   elements.btnPlay.disabled = false;
+  if (elements.btnPlayAll) elements.btnPlayAll.disabled = false;
 
   const html = commands.map((cmd, index) => {
     const timing = cmd.timing ? `${(cmd.timing / 1000).toFixed(1)}s` : '';
@@ -2111,11 +2169,13 @@ function updateUIState() {
     elements.btnStart.disabled = true;
     elements.btnStop.disabled = false;
     elements.btnPlay.disabled = true;
+    if (elements.btnPlayAll) elements.btnPlayAll.disabled = true;
     showStatus('recording', 'Enregistrement en cours...');
   } else {
     elements.btnStart.disabled = false;
     elements.btnStop.disabled = true;
     elements.btnPlay.disabled = state.currentScenario.Commands.length === 0;
+    if (elements.btnPlayAll) elements.btnPlayAll.disabled = state.currentScenario.Commands.length === 0;
   }
 }
 
@@ -2604,8 +2664,8 @@ async function init() {
 }
 
 // Fonction pour exécuter une seule commande
-async function executeSingleCommand(index) {
-  if (state.isPlaying) return;
+async function executeSingleCommand(index, options = {}) {
+  if (state.isPlaying && !options?.bypassPlayingGuard) return;
   
   const commands = state.currentScenario.Commands;
   if (index < 0 || index >= commands.length) return;

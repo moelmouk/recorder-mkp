@@ -1655,15 +1655,27 @@ body[data-theme="dark"] [contenteditable].field-highlight {
   transition: var(--transition);
 }
 
-.btn-play {
-  color: #10b981; /* Couleur verte pour le bouton play */
+.btn-play,
+.btn-play-all {
+  color: #10b981; /* Couleur verte pour les boutons de lecture */
   border-color: rgba(16, 185, 129, 0.3);
 }
 
-.btn-play:hover {
+.btn-play:hover,
+.btn-play-all:hover {
   color: #059669; /* Couleur verte plus foncée au survol */
   background-color: rgba(16, 185, 129, 0.1);
   border-color: #10b981;
+}
+
+/* Style spécifique pour le bouton de lecture séquentielle */
+.btn-play-all {
+  position: relative;
+  opacity: 0.9;
+}
+
+.btn-play-all:hover {
+  opacity: 1;
 }
 
 .cmd-icon-btn svg {
