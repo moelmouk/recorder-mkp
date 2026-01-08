@@ -655,7 +655,10 @@ elements.btnClear.addEventListener('click', async () => {
 
 function renderCommands() {
   const commands = state.currentScenario.Commands;
-  elements.commandCount.textContent = commands.length;
+  // Mettre à jour le compteur de commandes
+  if (elements.commandCount) {
+    elements.commandCount.textContent = commands.length;
+  }
 
   if (commands.length === 0) {
     elements.commandsList.innerHTML = `
@@ -2360,10 +2363,40 @@ if (elements.confirmPaste) {
 // ==================== INIT ====================
 
 async function init() {
-  // Afficher la version du plugin en premier
+  // Afficher la version du plugin
   console.log('Initialisation de la popup...');
   displayVersion();
 
+  // Initialize search functionality
+  const commandSearch = document.getElementById('commandSearch');
+  if (commandSearch) {
+    commandSearch.addEventListener('input', (e) => {
+      const searchTerm = e.target.value.toLowerCase();
+      const commandItems = document.querySelectorAll('.command-item:not(.empty-state)');
+      let visibleCount = 0;
+      
+      commandItems.forEach(item => {
+        const commandText = item.textContent.toLowerCase();
+        const isVisible = commandText.includes(searchTerm);
+        item.style.display = isVisible ? 'flex' : 'none';
+        if (isVisible) visibleCount++;
+      });
+      
+      // Update command count
+      const commandCount = document.getElementById('commandCount');
+      if (commandCount) {
+        commandCount.textContent = visibleCount;
+      }
+      
+      // Show/hide empty state
+      const emptyState = document.querySelector('.commands-list .empty-state');
+      if (emptyState) {
+        emptyState.style.display = visibleCount === 0 && searchTerm === '' ? 'none' : 
+                                 (visibleCount === 0 ? 'flex' : 'none');
+      }
+    });
+  }
+  
   // Initialize settings tabs
   initSettingsTabs();
   if (elements.themeSelect) {
