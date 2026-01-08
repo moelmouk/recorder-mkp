@@ -77,6 +77,20 @@
           </div>
         </div>
 
+
+         <div id="saveScenarioFields" style="display: none; margin-top: 12px;">
+          <div class="form-group">
+            <label for="scenarioName">Nom du scénario</label>
+            <input type="text" id="scenarioName" value="Nouveau scénario" placeholder="Nom du scénario">
+          </div>
+
+          <div class="form-group" >
+            <label for="scenarioGroup">Groupe</label>
+            <select id="scenarioGroup">
+              <option value="">Sans groupe</option>
+            </select>
+          </div>
+        </div>
        
 
         <div class="form-group">
@@ -178,20 +192,7 @@
           </div>
         </div>
 
-
-         <!-- Scenario Name -->
-        <div class="form-group">
-          <label for="scenarioName">Nom du scénario</label>
-          <input type="text" id="scenarioName" value="Nouveau scénario" placeholder="Nom du scénario">
-        </div>
-
-        <!-- Group Select -->
-        <div class="form-group">
-          <label for="scenarioGroup">Groupe</label>
-          <select id="scenarioGroup">
-            <option value="">Sans groupe</option>
-          </select>
-        </div>
+       
 
       </section>
 
@@ -335,11 +336,12 @@
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label>Nom du scénario</label>
-            <input type="text" id="editScenarioName" placeholder="Nom">
+            <label for="editScenarioName">Nom du scénario</label>
+            <input type="text" id="editScenarioName" placeholder="Nom du scénario">
           </div>
+
           <div class="form-group">
-            <label>Groupe</label>
+            <label for="editScenarioGroup">Groupe</label>
             <select id="editScenarioGroup">
               <option value="">Sans groupe</option>
             </select>

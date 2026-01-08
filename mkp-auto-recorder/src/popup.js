@@ -39,6 +39,7 @@ const elements = {
   // Recorder Tab
   statusBar: document.getElementById('statusBar'),
   btnShowSource: document.getElementById('btnShowSource'),
+  saveScenarioFields: document.getElementById('saveScenarioFields'),
   scenarioName: document.getElementById('scenarioName'),
   scenarioGroup: document.getElementById('scenarioGroup'),
   appendRecording: document.getElementById('appendRecording'),
@@ -619,6 +620,24 @@ function pollPlaybackState() {
 // ==================== SAVE/CLEAR ====================
 
 elements.btnSave.addEventListener('click', async () => {
+  const savePanel = elements.saveScenarioFields || document.getElementById('saveScenarioFields');
+
+  if (savePanel && savePanel.style.display === 'none') {
+    if (elements.scenarioName) {
+      elements.scenarioName.value = state.currentScenario?.Name || elements.scenarioName.value || 'Nouveau scénario';
+    }
+    if (elements.scenarioGroup) {
+      elements.scenarioGroup.value = state.currentScenario?.groupId || elements.scenarioGroup.value || '';
+    }
+
+    savePanel.style.display = 'block';
+    try {
+      elements.scenarioName && elements.scenarioName.focus && elements.scenarioName.focus();
+      elements.scenarioName && elements.scenarioName.select && elements.scenarioName.select();
+    } catch (e) {}
+    return;
+  }
+
   if (state.currentScenario.Commands.length === 0) {
     showStatus('error', 'Aucune action à sauvegarder');
     return;
@@ -637,6 +656,10 @@ elements.btnSave.addEventListener('click', async () => {
 
   await saveData();
   showStatus('success', 'Scénario sauvegardé');
+
+  if (savePanel) {
+    savePanel.style.display = 'none';
+  }
 });
 
 elements.btnClear.addEventListener('click', async () => {
