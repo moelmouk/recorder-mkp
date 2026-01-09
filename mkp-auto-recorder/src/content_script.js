@@ -290,6 +290,98 @@
     console.log('MKP Playback overlay shown');
   }
 
+  // ===== Tab playback indicator (favicon + title) =====
+  let __mkpOriginalTitle = null;
+  let __mkpOriginalFaviconLinks = null;
+
+  function mkpGetFaviconLinks() {
+    try {
+      return Array.from(document.querySelectorAll('link[rel~="icon"]'));
+    } catch (e) { return []; }
+  }
+
+  function mkpEnsureOriginalsSaved() {
+    if (__mkpOriginalFaviconLinks === null) {
+      __mkpOriginalFaviconLinks = mkpGetFaviconLinks().map(link => ({
+        rel: link.getAttribute('rel') || 'icon',
+        type: link.getAttribute('type') || '',
+        href: link.getAttribute('href') || '',
+        sizes: link.getAttribute('sizes') || ''
+      }));
+    }
+    if (__mkpOriginalTitle === null) {
+      __mkpOriginalTitle = document.title || '';
+    }
+  }
+
+  function mkpSetFaviconData(svgString) {
+    // Remove any previous MKP favicon
+    const prev = document.getElementById('mkp-favicon');
+    if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+    // Remove existing favicons to avoid conflicts (they will be restored later)
+    const existing = mkpGetFaviconLinks();
+    existing.forEach(el => el.parentNode && el.parentNode.removeChild(el));
+
+    const link = document.createElement('link');
+    link.setAttribute('id', 'mkp-favicon');
+    link.setAttribute('rel', 'icon');
+    link.setAttribute('type', 'image/svg+xml');
+    link.setAttribute('href', 'data:image/svg+xml;utf8,' + encodeURIComponent(svgString));
+    document.head.appendChild(link);
+  }
+
+  function mkpSetTitlePrefix(prefix) {
+    try {
+      mkpEnsureOriginalsSaved();
+      const base = __mkpOriginalTitle || '';
+      document.title = (prefix ? (prefix + ' ' + base) : base);
+    } catch (e) {}
+  }
+
+  function showTabPlaybackIndicator(status) {
+    try {
+      mkpEnsureOriginalsSaved();
+      if (status === 'paused') {
+        const pauseSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#94a3b8"/><rect x="10" y="9" width="4" height="14" rx="1.5" fill="#fff"/><rect x="18" y="9" width="4" height="14" rx="1.5" fill="#fff"/></svg>';
+        mkpSetFaviconData(pauseSvg);
+        mkpSetTitlePrefix('⏸');
+        return;
+      }
+      // default to playing icon
+      const playSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#4f46e5"/><polygon points="12,9 12,23 23,16" fill="#fff"/></svg>';
+      mkpSetFaviconData(playSvg);
+      mkpSetTitlePrefix('▶');
+    } catch (e) {}
+  }
+
+  function clearTabPlaybackIndicator() {
+    try {
+      // Remove MKP favicon
+      const prev = document.getElementById('mkp-favicon');
+      if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+      // Restore original favicon links
+      if (Array.isArray(__mkpOriginalFaviconLinks)) {
+        __mkpOriginalFaviconLinks.forEach(data => {
+          try {
+            const link = document.createElement('link');
+            link.setAttribute('rel', data.rel || 'icon');
+            if (data.type) link.setAttribute('type', data.type);
+            if (data.sizes) link.setAttribute('sizes', data.sizes);
+            link.setAttribute('href', data.href);
+            document.head.appendChild(link);
+          } catch (e) {}
+        });
+      }
+
+      // Restore original title
+      if (__mkpOriginalTitle !== null) {
+        document.title = __mkpOriginalTitle;
+      }
+    } catch (e) {}
+  }
+
   function setPlaybackUiStatus(status) {
     playbackUiStatus = status;
 
@@ -304,15 +396,17 @@
       if (pauseText) pauseText.textContent = 'Reprendre';
       if (playbackOverlay) playbackOverlay.classList.add('mkp-paused');
       if (pulse) pulse.setAttribute('aria-label', 'paused');
+      showTabPlaybackIndicator('paused');
       return;
     }
 
-    if (status === 'stopped') {
-      if (statusText) statusText.textContent = 'Arrêtée';
+    if (status === 'stopped' || status === 'completed' || status === 'error') {
+      if (statusText) statusText.textContent = (status === 'error') ? 'Erreur' : (status === 'completed' ? 'Terminée' : 'Arrêtée');
       if (pauseIcon) pauseIcon.textContent = '▶️';
       if (pauseText) pauseText.textContent = 'Reprendre';
       if (playbackOverlay) playbackOverlay.classList.remove('mkp-paused');
-      if (pulse) pulse.setAttribute('aria-label', 'stopped');
+      if (pulse) pulse.setAttribute('aria-label', status);
+      clearTabPlaybackIndicator();
       return;
     }
 
@@ -321,6 +415,7 @@
     if (pauseText) pauseText.textContent = 'Pause';
     if (playbackOverlay) playbackOverlay.classList.remove('mkp-paused');
     if (pulse) pulse.setAttribute('aria-label', 'playing');
+    showTabPlaybackIndicator('playing');
   }
 
   function removePlaybackOverlay() {
@@ -328,6 +423,8 @@
     if (overlay) overlay.remove();
     playbackOverlay = null;
     skipResolve = null;
+    // Also clear tab indicator in case no explicit status is sent
+    try { clearTabPlaybackIndicator(); } catch (e) {}
     playbackUiStatus = 'playing';
   }
 

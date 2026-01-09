@@ -42,3 +42,8 @@ Versioning : Gestion des versions des scénarios
 Documentation intégrée : Aide contextuelle pour chaque type de commande
 Tutoriels interactifs : Pour guider les nouveaux utilisateurs
 Exemples de scénarios : Bibliothèque d'exemples pour différents cas d'utilisation
+
+11-01-2026: Indicateur visuel du scénario en cours dans l’onglet Groupes
+- Mise en évidence du scénario en cours d’exécution pendant la lecture d’un groupe (classe CSS `.playing` sur l’élément `.scenario-item`).
+- Synchronisation en temps réel via l’état `playbackState` (ajout de `scenarioId`) et le polling du popup.
+- Le surlignage se met à jour lors du changement de scénario, défile jusqu’à l’élément courant, et est nettoyé à la fin/arrêt de la lecture.
