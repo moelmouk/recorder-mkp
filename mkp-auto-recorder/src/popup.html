@@ -480,6 +480,12 @@
                 </select>
                 <small class="help-text">Choisissez l'algorithme utilisé par le bouton Lecture.</small>
               </div>
+
+              <div class="form-group">
+                <label for="interScenarioDelayMs">Temps d’attente entre scénarios (ms)</label>
+                <input type="number" id="interScenarioDelayMs" min="0" max="600000" step="100" placeholder="500">
+                <small class="help-text">Durée de pause entre deux scénarios lors de la lecture d’un groupe. 0 = aucun délai. Valeur maximale: 600000 ms (10 min).</small>
+              </div>
             </div>
           </div>
         </div>

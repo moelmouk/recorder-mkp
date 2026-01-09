@@ -248,9 +248,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         category: 'playback',
         action: 'play_group',
         message: 'Lecture groupe',
-        data: { tabId: message.tabId, count: Array.isArray(message.scenarios) ? message.scenarios.length : 0, useRealTiming: message.useRealTiming !== false }
+        data: { tabId: message.tabId, count: Array.isArray(message.scenarios) ? message.scenarios.length : 0, useRealTiming: message.useRealTiming !== false, interScenarioDelayMs: Number(message.interScenarioDelayMs) }
       });
-      handlePlayGroup(message.scenarios, message.tabId, message.useRealTiming !== false);
+      handlePlayGroup(
+        message.scenarios,
+        message.tabId,
+        message.useRealTiming !== false,
+        Number.isFinite(Number(message.interScenarioDelayMs)) ? Number(message.interScenarioDelayMs) : 500
+      );
       sendResponse({ success: true });
       break;
 
@@ -627,11 +632,17 @@ async function handlePlayScenario(tabId, useRealTiming = true) {
   await saveState();
 }
 
-async function handlePlayGroup(scenarios, tabId, useRealTiming = true) {
+async function handlePlayGroup(scenarios, tabId, useRealTiming = true, interScenarioDelayMs = 500) {
   if (isPlaying) {
     console.log('Already playing');
     return;
   }
+
+  // Clamp and normalize inter-scenario delay
+  if (!Number.isFinite(interScenarioDelayMs)) interScenarioDelayMs = 500;
+  if (interScenarioDelayMs < 0) interScenarioDelayMs = 0;
+  if (interScenarioDelayMs > 600000) interScenarioDelayMs = 600000;
+  interScenarioDelayMs = Math.round(interScenarioDelayMs);
 
   if (!scenarios || scenarios.length === 0) {
     playbackState.status = 'error';
@@ -700,7 +711,7 @@ async function handlePlayGroup(scenarios, tabId, useRealTiming = true) {
     }
 
     if (i < scenarios.length - 1) {
-      let remaining = 500;
+      let remaining = interScenarioDelayMs;
       while (remaining > 0) {
         if (!isPlaying) break;
         if (playbackState.status === 'paused') {
@@ -708,6 +719,20 @@ async function handlePlayGroup(scenarios, tabId, useRealTiming = true) {
           continue;
         }
         const chunk = Math.min(remaining, 200);
+        // Update overlay countdown (optional informational)
+        try {
+          if (playbackTabId) {
+            await chrome.tabs.sendMessage(playbackTabId, {
+              type: 'UPDATE_PLAYBACK_OVERLAY',
+              current: playbackState.currentIndex,
+              total: playbackState.total,
+              command: null,
+              delay: remaining
+            });
+          }
+        } catch (e) {
+          // ignore overlay errors
+        }
         await new Promise(r => setTimeout(r, chunk));
         remaining -= chunk;
       }

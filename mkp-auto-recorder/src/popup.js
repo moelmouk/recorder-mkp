@@ -106,6 +106,7 @@ const elements = {
   settingsTabPanes: document.querySelectorAll('#settingsModal .modal-tab-pane'),
   themeSelect: document.getElementById('themeSelect'),
   playbackModeSelect: document.getElementById('playbackModeSelect'),
+  interScenarioDelayMs: document.getElementById('interScenarioDelayMs'),
 
   logLevelFilter: document.getElementById('logLevelFilter'),
   logSearch: document.getElementById('logSearch'),
@@ -173,6 +174,37 @@ async function savePlaybackMode(mode) {
   updatePlayButtonTitle();
 }
 
+async function loadInterScenarioDelay() {
+  let v = 500;
+  try {
+    const res = await chrome.storage.local.get(['mkpInterScenarioDelayMs']);
+    if (Number.isFinite(res.mkpInterScenarioDelayMs)) v = res.mkpInterScenarioDelayMs;
+  } catch (e) {}
+  v = clampDelayMs(v);
+  state.groupInterScenarioDelayMs = v;
+  if (elements.interScenarioDelayMs) elements.interScenarioDelayMs.value = String(v);
+}
+
+async function saveInterScenarioDelay(value) {
+  let v = parseInt(value, 10);
+  if (!Number.isFinite(v)) v = 500;
+  v = clampDelayMs(v);
+  try {
+    await chrome.storage.local.set({ mkpInterScenarioDelayMs: v });
+  } catch (e) {
+    // ignore storage errors
+  }
+  state.groupInterScenarioDelayMs = v;
+  if (elements.interScenarioDelayMs) elements.interScenarioDelayMs.value = String(v);
+}
+
+function clampDelayMs(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  if (n > 600000) return 600000;
+  return Math.round(n);
+}
+
 function setSettingsTab(tabId) {
   const id = (tabId === 'configuration') ? 'configuration' : 'backup';
   elements.settingsTabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === id));
@@ -207,7 +239,9 @@ const state = {
   currentPlayingScenarioId: null,
   logs: [],
   isPlaying: false,
-  playbackMode: 'RWRT'
+  playbackMode: 'RWRT',
+  // Delay between scenarios during group playback (ms)
+  groupInterScenarioDelayMs: 500
 };
 
 function createEmptyScenario() {
@@ -2241,7 +2275,8 @@ elements.groupPlayStart.addEventListener('click', async () => {
     type: 'PLAY_GROUP',
     scenarios: scenariosToPlay,
     tabId: tab.id,
-    useRealTiming: useRealTiming
+    useRealTiming: useRealTiming,
+    interScenarioDelayMs: state.groupInterScenarioDelayMs
   });
 
   pollGroupPlayback(scenariosToPlay.length);
@@ -2638,10 +2673,17 @@ async function init() {
       await savePlaybackMode(elements.playbackModeSelect.value);
     });
   }
+  if (elements.interScenarioDelayMs) {
+    elements.interScenarioDelayMs.addEventListener('change', async () => {
+      await saveInterScenarioDelay(elements.interScenarioDelayMs.value);
+    });
+  }
   // Theme management
   loadTheme();
   // Playback mode management
   await loadPlaybackMode();
+  // Inter-scenario delay management
+  await loadInterScenarioDelay();
   
   // Load highlight style
   loadHighlightStyle();
