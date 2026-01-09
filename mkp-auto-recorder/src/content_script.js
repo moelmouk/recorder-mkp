@@ -1553,6 +1553,56 @@
     return false;
   }
 
+  function getClientPointForElement(el) {
+    try {
+      const rect = el.getBoundingClientRect();
+      const x = Math.max(0, Math.round(rect.left + rect.width / 2));
+      const y = Math.max(0, Math.round(rect.top + rect.height / 2));
+      return { x, y };
+    } catch (e) {
+      return { x: 0, y: 0 };
+    }
+  }
+
+  function dispatchPointerAndMouseClickSequence(el) {
+    if (!el) return;
+
+    try {
+      if (typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      }
+    } catch (e) {}
+
+    const { x, y } = getClientPointForElement(el);
+    const common = {
+      view: window,
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      clientX: x,
+      clientY: y,
+      screenX: x,
+      screenY: y
+    };
+
+    try {
+      if (typeof PointerEvent !== 'undefined') {
+        el.dispatchEvent(new PointerEvent('pointerdown', { ...common, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1 }));
+      }
+    } catch (e) {}
+
+    el.dispatchEvent(new MouseEvent('mousedown', { ...common, button: 0, buttons: 1 }));
+
+    try {
+      if (typeof PointerEvent !== 'undefined') {
+        el.dispatchEvent(new PointerEvent('pointerup', { ...common, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 0 }));
+      }
+    } catch (e) {}
+
+    el.dispatchEvent(new MouseEvent('mouseup', { ...common, button: 0, buttons: 0 }));
+    el.dispatchEvent(new MouseEvent('click', { ...common, button: 0, buttons: 0 }));
+  }
+
   async function executeCommand(cmd) {
     const command = cmd.Command ? cmd.Command.toLowerCase() : '';
     const target = cmd.Target || '';
@@ -1583,7 +1633,7 @@
         }
 
         if (!el) throw new Error(`Élément non trouvé: ${target.substring(0, 50)}`);
-        
+
         // Vérifier si c'est un clic sur une option de profession
         if (isProfessionOption) {
           // IMPORTANT: on doit réellement cliquer sur l'option pour que ng-select / Angular mette à jour son modèle.
@@ -1593,13 +1643,7 @@
           el.classList.add('field-highlight-click');
           setTimeout(() => el.classList.remove('field-highlight-click'), 500);
 
-          ['mousedown', 'mouseup', 'click'].forEach(eventType => {
-            if (eventType === 'click' && typeof el.click === 'function') {
-              el.click();
-              return;
-            }
-            el.dispatchEvent(new MouseEvent(eventType, { view: window, bubbles: true, cancelable: true }));
-          });
+          dispatchPointerAndMouseClickSequence(el);
 
           // Petit délai pour laisser Angular appliquer la sélection
           await new Promise(r => setTimeout(r, 100));
@@ -1632,21 +1676,14 @@
 
           return { success: true };
         }
-        
+
         highlightElement(el, 3000);
-        
+
         // Ajouter une classe temporaire pour le clic
         el.classList.add('field-highlight-click');
         setTimeout(() => el.classList.remove('field-highlight-click'), 500);
-        
-        ['mousedown', 'mouseup', 'click'].forEach(eventType => {
-          if (eventType === 'click' && typeof el.click === 'function') {
-            el.click();
-            return;
-          }
-          el.dispatchEvent(new MouseEvent(eventType, { view: window, bubbles: true, cancelable: true }));
-        });
-        
+
+        dispatchPointerAndMouseClickSequence(el);
         focusIfEditable(el);
         return { success: true };
       }
@@ -1654,17 +1691,17 @@
       case 'type': {
         const el = findElementWithFallback(target, targets);
         if (!el) throw new Error(`Élément non trouvé: ${target.substring(0, 50)}`);
-        
+
         highlightElement(el, 3000);
         focusIfEditable(el);
-        
+
         // Vider le champ
         el.value = '';
         el.dispatchEvent(new Event('input', { bubbles: true }));
-        
+
         // Pour les champs sensibles, simuler une saisie progressive
         const isProfessionField = target.includes('profession_input-select') && (target.endsWith('input') || target.includes('/input'));
-        if (isProfessionField || target.includes('zipcode') || target.includes('code-postal') || target.includes('postal-code') || 
+        if (isProfessionField || target.includes('zipcode') || target.includes('code-postal') || target.includes('postal-code') ||
             target.includes('first-name') || target.includes('surname') || target.includes('last-name')) {
             if (isProfessionField) {
               try { el.click(); } catch (e) {}
@@ -1675,21 +1712,21 @@
             for (let i = 0; i < value.length; i++) {
                 const char = value[i];
                 el.value += char;
-                
+
                 // Déclencher les événements pour chaque caractère
                 el.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
                 el.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
                 el.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true }));
                 el.dispatchEvent(new Event('input', { bubbles: true }));
-                
+
                 // Petit délai entre chaque caractère
                 await new Promise(resolve => setTimeout(resolve, 100));
             }
-            
+
             // Déclencher les événements finaux
             el.dispatchEvent(new Event('change', { bubbles: true }));
             if (!isProfessionField) el.dispatchEvent(new Event('blur', { bubbles: true }));
-            
+
             // Attendre un peu pour l'auto-complétion
             await new Promise(resolve => setTimeout(resolve, 500));
         } else {
@@ -1698,7 +1735,7 @@
             el.dispatchEvent(new Event('input', { bubbles: true }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
         }
-        
+
         return { success: true };
       }
 
@@ -1706,13 +1743,13 @@
       case 'selectandwait': {
         const el = findElementWithFallback(target, targets);
         if (!el) throw new Error(`Élément non trouvé: ${target.substring(0, 50)}`);
-        
+
         highlightElement(el, 3000);
         const options = Array.from(el.getElementsByTagName('option'));
         let option = options.find(op => domText(op).trim() === value || op.text === value || op.value === value);
-        
+
         if (!option) throw new Error(`Option non trouvée: ${value}`);
-        
+
         el.value = option.value;
         el.dispatchEvent(new Event('change', { bubbles: true }));
         return { success: true };
