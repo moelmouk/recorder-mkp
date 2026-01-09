@@ -105,6 +105,7 @@ const elements = {
   settingsTabBtns: document.querySelectorAll('#settingsTabNav .modal-tab-btn'),
   settingsTabPanes: document.querySelectorAll('#settingsModal .modal-tab-pane'),
   themeSelect: document.getElementById('themeSelect'),
+  playbackModeSelect: document.getElementById('playbackModeSelect'),
 
   logLevelFilter: document.getElementById('logLevelFilter'),
   logSearch: document.getElementById('logSearch'),
@@ -140,6 +141,38 @@ async function saveTheme(theme) {
   applyTheme(t);
 }
 
+// ==================== PLAYBACK MODE (RWRT | RAC) ====================
+function updatePlayButtonTitle() {
+  if (elements.btnPlay) {
+    const mode = state.playbackMode === 'RAC' ? 'RAC' : 'RWRT';
+    elements.btnPlay.title = mode === 'RAC' ? 'Lire séquentiellement (RAC)' : 'Rejouer le scénario (RWRT)';
+  }
+}
+
+async function loadPlaybackMode() {
+  try {
+    const result = await chrome.storage.local.get(['mkpPlaybackMode']);
+    const mode = result && result.mkpPlaybackMode === 'RAC' ? 'RAC' : 'RWRT';
+    state.playbackMode = mode;
+    if (elements.playbackModeSelect) elements.playbackModeSelect.value = mode;
+  } catch (e) {
+    state.playbackMode = 'RWRT';
+  }
+  updatePlayButtonTitle();
+}
+
+async function savePlaybackMode(mode) {
+  const m = mode === 'RAC' ? 'RAC' : 'RWRT';
+  try {
+    await chrome.storage.local.set({ mkpPlaybackMode: m });
+  } catch (e) {
+    // ignore
+  }
+  state.playbackMode = m;
+  if (elements.playbackModeSelect) elements.playbackModeSelect.value = m;
+  updatePlayButtonTitle();
+}
+
 function setSettingsTab(tabId) {
   const id = (tabId === 'configuration') ? 'configuration' : 'backup';
   elements.settingsTabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === id));
@@ -169,7 +202,8 @@ const state = {
   editingScenarioId: null,
   playingGroupId: null,
   logs: [],
-  isPlaying: false
+  isPlaying: false,
+  playbackMode: 'RWRT'
 };
 
 function createEmptyScenario() {
@@ -553,6 +587,13 @@ async function executeAllCommands() {
 }
 
 elements.btnPlay.addEventListener('click', async () => {
+  // If playback mode is RAC (Read All Commands), run sequential executor and return
+  if (state.playbackMode === 'RAC') {
+    await executeAllCommands();
+    return;
+  }
+
+  // Default RWRT (Read With Real Time) behavior
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !tab.id) {
     showStatus('error', 'Impossible de lancer');
@@ -2487,8 +2528,15 @@ async function init() {
       await saveTheme(elements.themeSelect.value);
     });
   }
+  if (elements.playbackModeSelect) {
+    elements.playbackModeSelect.addEventListener('change', async () => {
+      await savePlaybackMode(elements.playbackModeSelect.value);
+    });
+  }
   // Theme management
   loadTheme();
+  // Playback mode management
+  await loadPlaybackMode();
   
   // Load highlight style
   loadHighlightStyle();
