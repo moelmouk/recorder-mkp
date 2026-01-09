@@ -548,6 +548,14 @@ async function executeAllCommands() {
   const commands = Array.isArray(state.currentScenario?.Commands) ? state.currentScenario.Commands : [];
   if (commands.length === 0) return;
 
+  // Work only with enabled commands for RAC progression
+  const activeIndexes = commands.map((c, idx) => (!c?.disabled ? idx : -1)).filter(i => i >= 0);
+  const totalToPlay = activeIndexes.length;
+  if (totalToPlay === 0) {
+    showStatus('error', 'Aucune action active à lire');
+    return;
+  }
+
   state.isPlaying = true;
   showStatus('playing', 'Lecture séquentielle en cours...');
   resetCommandProgress();
@@ -556,28 +564,71 @@ async function executeAllCommands() {
   if (elements.btnPlay) elements.btnPlay.disabled = true;
   if (elements.btnStart) elements.btnStart.disabled = true;
 
+  // Determine active tab and open playback overlay via background
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabId = tab?.id;
   try {
-    let playedCount = 0;
-    const totalToPlay = commands.filter(cmd => !cmd?.disabled).length;
-    if (totalToPlay === 0) {
-      showStatus('error', 'Aucune action active à lire');
-      return;
-    }
+    await chrome.runtime.sendMessage({ type: 'RAC_START', tabId, total: totalToPlay });
+  } catch (e) {
+    console.warn('RAC_START error (overlay may not appear):', e);
+  }
 
-    for (let i = 0; i < commands.length; i++) {
-      if (commands[i]?.disabled) continue;
+  let aborted = false;
+  try {
+    for (let playedCount = 0; playedCount < totalToPlay; playedCount++) {
+      const cmdIndex = activeIndexes[playedCount];
+      const cmd = commands[cmdIndex];
 
-      playedCount++;
-      updateGlobalProgress(playedCount, totalToPlay);
-      showStatus('playing', `Lecture ${playedCount}/${totalToPlay}...`);
+      // Handle pause/stop via background playback state
+      while (true) {
+        let st;
+        try {
+          const resp = await chrome.runtime.sendMessage({ type: 'GET_PLAYBACK_STATE' });
+          st = resp?.state;
+        } catch (e) {
+          st = null;
+        }
+        const status = st?.status || 'playing';
+        if (status === 'stopped') { aborted = true; break; }
+        if (status === 'paused') { await waitMs(200); continue; }
+        break; // playing
+      }
+      if (aborted) break;
 
-      await executeSingleCommand(i, { bypassPlayingGuard: true });
+      // Update overlay with current progress and next command info
+      try {
+        await chrome.runtime.sendMessage({
+          type: 'RAC_UPDATE',
+          current: playedCount,
+          total: totalToPlay,
+          command: cmd?.Command || '',
+          delay: 0
+        });
+      } catch {}
+
+      // Update popup progress and status
+      updateGlobalProgress(playedCount + 1, totalToPlay);
+      showStatus('playing', `Lecture ${playedCount + 1}/${totalToPlay}...`);
+
+      // Execute the command
+      await executeSingleCommand(cmdIndex, { bypassPlayingGuard: true });
+
+      // Small spacing delay between commands (kept from previous behavior)
       await waitMs(500);
     }
 
-    updateGlobalProgress(totalToPlay, totalToPlay);
-    showStatus('success', 'Lecture séquentielle terminée');
+    if (!aborted) {
+      updateGlobalProgress(totalToPlay, totalToPlay);
+      showStatus('success', 'Lecture séquentielle terminée');
+    } else {
+      showStatus('error', 'Lecture arrêtée');
+    }
   } finally {
+    // Close overlay if we finished normally; if user stopped, background already hid it via STOP_PLAYBACK
+    if (!aborted) {
+      try { await chrome.runtime.sendMessage({ type: 'RAC_END' }); } catch {}
+    }
+
     state.isPlaying = false;
     if (elements.btnPlayAll) elements.btnPlayAll.disabled = state.currentScenario.Commands.length === 0;
     if (elements.btnPlay) elements.btnPlay.disabled = state.currentScenario.Commands.length === 0;

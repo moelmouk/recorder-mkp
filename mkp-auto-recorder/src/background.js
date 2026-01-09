@@ -252,6 +252,87 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true });
       break;
 
+    // RAC (Read All Commands) control from popup.js
+    case 'RAC_START': {
+      (async () => {
+        try {
+          playbackTabId = message.tabId || (sender && sender.tab && sender.tab.id) || playbackTabId;
+          const total = Number.isFinite(message.total) ? message.total : (currentScenario?.Commands?.length || 0);
+          isPlaying = true;
+          playbackState.status = 'playing';
+          playbackState.currentIndex = 0;
+          playbackState.total = total;
+          playbackState.error = null;
+          playbackState.errorIndexes = [];
+          updateBadge();
+          try { await notifyPlaybackUiState('playing'); } catch (e) { console.log('Notify UI state error (RAC_START):', e); }
+          try {
+            if (playbackTabId) {
+              await chrome.tabs.sendMessage(playbackTabId, { type: 'SHOW_PLAYBACK_OVERLAY' });
+            }
+          } catch (e) {
+            console.log('Error showing playback overlay (RAC_START):', e);
+          }
+          sendResponse({ success: true });
+        } catch (e) {
+          sendResponse({ success: false, error: (e && e.message) ? e.message : 'RAC_START failed' });
+        }
+      })();
+      return true;
+    }
+
+    case 'RAC_UPDATE': {
+      (async () => {
+        try {
+          const current = Number.isFinite(message.current) ? message.current : playbackState.currentIndex;
+          const total = Number.isFinite(message.total) ? message.total : playbackState.total;
+          playbackState.currentIndex = current;
+          playbackState.total = total;
+          if (playbackTabId) {
+            try {
+              await chrome.tabs.sendMessage(playbackTabId, {
+                type: 'UPDATE_PLAYBACK_OVERLAY',
+                current: current,
+                total: total,
+                command: message.command || null,
+                delay: Number.isFinite(message.delay) ? message.delay : 0
+              });
+            } catch (e) {
+              console.log('Error updating overlay (RAC_UPDATE):', e);
+            }
+          }
+          sendResponse({ success: true });
+        } catch (e) {
+          sendResponse({ success: false, error: (e && e.message) ? e.message : 'RAC_UPDATE failed' });
+        }
+      })();
+      return true;
+    }
+
+    case 'RAC_END': {
+      (async () => {
+        try {
+          isPlaying = false;
+          playbackState.status = 'stopped';
+          updateBadge();
+          try { await notifyPlaybackUiState('stopped'); } catch (e) { console.log('Notify UI state error (RAC_END):', e); }
+          try {
+            if (playbackTabId) {
+              await chrome.tabs.sendMessage(playbackTabId, { type: 'HIDE_PLAYBACK_OVERLAY' });
+            }
+          } catch (e) {
+            console.log('Error hiding playback overlay (RAC_END):', e);
+          }
+          playbackTabId = null;
+          saveState();
+          sendResponse({ success: true });
+        } catch (e) {
+          sendResponse({ success: false, error: (e && e.message) ? e.message : 'RAC_END failed' });
+        }
+      })();
+      return true;
+    }
+
     case 'STOP_PLAYBACK':
       appendLog({ level: 'info', category: 'playback', action: 'stop', message: 'Arrêt lecture' });
       if (!playbackTabId && sender && sender.tab && sender.tab.id) {
