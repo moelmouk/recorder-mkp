@@ -20,6 +20,8 @@ let playbackTabId = null;
 let playbackState = {
   currentIndex: 0,
   scenarioIndex: 0,
+  // Currently playing scenario id (for group playback UI highlight)
+  scenarioId: null,
   status: 'idle',
   error: null,
   total: 0,
@@ -343,6 +345,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       playbackState.error = null;
       playbackState.currentIndex = 0;
       playbackState.scenarioIndex = 0;
+      playbackState.scenarioId = null;
       playbackState.total = 0;
       playbackState.errorIndexes = [];
       updateBadge();
@@ -642,6 +645,7 @@ async function handlePlayGroup(scenarios, tabId, useRealTiming = true) {
   playbackState = {
     currentIndex: 0,
     scenarioIndex: 0,
+    scenarioId: null,
     status: 'playing',
     error: null,
     total: 0,
@@ -683,6 +687,7 @@ async function handlePlayGroup(scenarios, tabId, useRealTiming = true) {
     playbackState.scenarioIndex = i;
     playbackState.total = activeCommands.length;
     playbackState.currentIndex = 0;
+    playbackState.scenarioId = scenario.id;
     await saveState();
 
     console.log(`Playing scenario ${i + 1}/${scenarios.length}: ${scenario.Name}`);

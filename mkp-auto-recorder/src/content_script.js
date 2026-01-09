@@ -1702,7 +1702,7 @@
         // Pour les champs sensibles, simuler une saisie progressive
         const isProfessionField = target.includes('profession_input-select') && (target.endsWith('input') || target.includes('/input'));
         if (isProfessionField || target.includes('zipcode') || target.includes('code-postal') || target.includes('postal-code') ||
-            target.includes('first-name') || target.includes('surname') || target.includes('last-name')) {
+            target.includes('first-name') || target.includes('surname') || target.includes('last-name') || target.includes('mobile-phone')) {
             if (isProfessionField) {
               try { el.click(); } catch (e) {}
               focusIfEditable(el);

@@ -17,6 +17,29 @@
       line-height: 1.2;
       margin-left: 4px;
     }
+    
+    /* Styles pour la mise en surbrillance du scénario en cours de lecture */
+    .scenario-item.playing {
+      position: relative;
+      border-left: 3px solid #4a6cf7 !important;
+      background-color: rgba(74, 108, 247, 0.1) !important;
+      padding-left: 10px !important;
+    }
+    
+    .scenario-item.playing::before {
+      content: '▶  ' !important;
+      position: absolute;
+      left: 8px;
+      color: #4a6cf7 !important;
+      font-size: 12px;
+      animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes pulse {
+      0% { opacity: 0.6; }
+      50% { opacity: 1; }
+      100% { opacity: 0.6; }
+    }
   </style>
 </head>
 <body>

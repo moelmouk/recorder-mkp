@@ -201,6 +201,10 @@ const state = {
   editingCommandIndex: -1,
   editingScenarioId: null,
   playingGroupId: null,
+  // Order of scenario IDs currently being played in a group
+  groupPlaybackOrderIds: [],
+  // Currently highlighted playing scenario id (for Groups tab UI)
+  currentPlayingScenarioId: null,
   logs: [],
   isPlaying: false,
   playbackMode: 'RWRT'
@@ -1575,7 +1579,7 @@ function renderGroupItem(group, level = 0) {
           ${groupScenarios.length > 0 ? `
             <div class="scenario-list">
               ${groupScenarios.map(scenario => `
-                <div class="scenario-item" data-id="${scenario.id}">
+                <div class="scenario-item${state.currentPlayingScenarioId === scenario.id ? ' playing' : ''}" data-id="${scenario.id}">
                   <span class="scenario-name">${escapeHtml(scenario.Name)}</span>
                   <div class="scenario-actions">
                     <button class="cmd-icon-btn btn-load-scenario" data-id="${scenario.id}" title="Charger ce scénario">
@@ -2217,6 +2221,14 @@ elements.groupPlayStart.addEventListener('click', async () => {
     };
   }).filter(Boolean);
   
+  // Store the ordered list of scenario IDs for live UI highlighting
+  state.groupPlaybackOrderIds = scenariosToPlay.map(s => s.id);
+  state.currentPlayingScenarioId = null;
+  // If Groups tab is visible, ensure initial render has no leftover highlight
+  if (document.querySelector('#tab-groups.tab-pane.active')) {
+    refreshGroupsList();
+  }
+
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !tab.id) {
     showStatus('error', 'Impossible de lancer');
@@ -2235,6 +2247,39 @@ elements.groupPlayStart.addEventListener('click', async () => {
   pollGroupPlayback(scenariosToPlay.length);
 });
 
+function setPlayingScenarioHighlight(scenarioId) {
+  try {
+    // Remove previous
+    if (state.currentPlayingScenarioId) {
+      const prevEl = document.querySelector(`#tab-groups .scenario-item[data-id="${state.currentPlayingScenarioId}"]`);
+      if (prevEl) prevEl.classList.remove('playing');
+    }
+    state.currentPlayingScenarioId = scenarioId || null;
+    if (scenarioId) {
+      const el = document.querySelector(`#tab-groups .scenario-item[data-id="${scenarioId}"]`);
+      if (el) {
+        el.classList.add('playing');
+        // Ensure visible
+        const container = document.querySelector('#tab-groups .groups-list, #tab-groups');
+        // Only scroll if not already sufficiently visible
+        if (el.scrollIntoView && container) {
+          el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+function clearPlayingScenarioHighlight() {
+  setPlayingScenarioHighlight(null);
+  // Also re-render the list to remove any residual state-based class
+  if (document.querySelector('#tab-groups.tab-pane.active')) {
+    refreshGroupsList();
+  }
+}
+
 function pollGroupPlayback(total) {
   const interval = setInterval(async () => {
     const response = await chrome.runtime.sendMessage({ type: 'GET_PLAYBACK_STATE' });
@@ -2242,14 +2287,23 @@ function pollGroupPlayback(total) {
 
     if (st.status === 'playing') {
       const scenarioNum = (st.scenarioIndex || 0) + 1;
+      // Determine current scenario id using background-provided id or our stored order
+      const currentScenarioId = st.scenarioId || state.groupPlaybackOrderIds[st.scenarioIndex] || null;
+      if (currentScenarioId && currentScenarioId !== state.currentPlayingScenarioId) {
+        setPlayingScenarioHighlight(currentScenarioId);
+      }
       showStatus('playing', `Scénario ${scenarioNum}/${total} - Action ${st.currentIndex + 1}/${st.total}`);
     } else if (st.status === 'completed') {
       clearInterval(interval);
       showStatus('success', 'Lecture groupe terminé');
       showToast('Lecture du groupe terminée sans erreur', 'success');
+      clearPlayingScenarioHighlight();
+      state.groupPlaybackOrderIds = [];
     } else if (st.status === 'error' || st.status === 'stopped') {
       clearInterval(interval);
       showStatus('error', st.error || 'Arrêté');
+      clearPlayingScenarioHighlight();
+      state.groupPlaybackOrderIds = [];
     }
   }, 200);
 }
