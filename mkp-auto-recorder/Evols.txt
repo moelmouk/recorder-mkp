@@ -53,3 +53,8 @@ Exemples de scénarios : Bibliothèque d'exemples pour différents cas d'utilisa
 - Stockage dans `chrome.storage.local` (clé `mkpInterScenarioDelayMs`), valeur par défaut 500 ms, bornes 0–600000 ms.
 - Transmission au background lors du `PLAY_GROUP` et application du délai entre scénarios avec prise en compte de la pause/arrêt.
 - Affichage d’un compte à rebours du délai dans l’overlay de lecture (si visible).
+
+09-01-2026: Compte à rebours du délai entre scénarios + application au début du scénario suivant
+- Le délai configuré est appliqué après la fin d’un scénario et avant le démarrage du suivant (A → délai → B).
+- L’overlay de lecture affiche désormais un compteur "Prochain scénario dans: …" mis à jour en temps réel.
+- Le compteur se fige en pause et reprend à la reprise; il disparaît à la fin/arrêt/erreur.

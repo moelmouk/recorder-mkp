@@ -233,7 +233,7 @@
           </div>
           <div class="mkp-step-command" id="mkp-step-command">-</div>
           <div class="mkp-step-target" id="mkp-step-target">-</div>
-          <div class="mkp-step-timer" id="mkp-step-timer" style="display: none; color: #0066cc; font-size: 14px; margin-top: 10px; font-weight: bold; padding: 5px; background: #f0f8ff; border-radius: 4px;"></div>
+          <div class="mkp-step-timer" id="mkp-step-timer" aria-live="polite" style="display: none; color: #0066cc; font-size: 14px; margin-top: 10px; font-weight: bold; padding: 5px; background: #f0f8ff; border-radius: 4px;"></div>
         </div>
         <div class="mkp-playback-error" id="mkp-error-box" style="display: none;">
           <div class="mkp-error-text" id="mkp-error-text"></div>
@@ -431,56 +431,57 @@
   let countdownInterval = null;
   
   function updatePlaybackOverlay(current, total, command, delay = 0) {
-    console.log('updatePlaybackOverlay called with:', { current, total, command, delay });
-    
     const progress = document.getElementById('mkp-progress');
     const cmdEl = document.getElementById('mkp-step-command');
     const targetEl = document.getElementById('mkp-step-target');
     const timerEl = document.getElementById('mkp-step-timer');
     const errorBox = document.getElementById('mkp-error-box');
-    
-    console.log('Timer element found:', !!timerEl);
-    if (timerEl) {
-      console.log('Timer element style:', timerEl.style.display);
-    }
 
-    // Arrêter le décompte précédent s'il y en a un
+    // Always clear any local countdown (we rely on background updates to avoid drift)
     if (countdownInterval) {
       clearInterval(countdownInterval);
       countdownInterval = null;
     }
 
-    if (progress) progress.textContent = `${current}/${total}`;
-    if (cmdEl) cmdEl.textContent = command.Command || '-';
-    if (targetEl) {
-      const target = command.Target || '';
-      targetEl.textContent = target.length > 60 ? target.substring(0, 60) + '...' : target;
-      targetEl.title = target;
+    if (progress && Number.isFinite(current) && Number.isFinite(total)) {
+      progress.textContent = `${current}/${total}`;
     }
-    
-    // Mettre à jour le timer avec le délai initial
+
+    // command can be null during inter-scenario delay
+    const cmdText = command && command.Command ? command.Command : '-';
+    if (cmdEl) cmdEl.textContent = cmdText;
+
+    if (targetEl) {
+      const target = command && command.Target ? command.Target : '';
+      const short = target.length > 60 ? target.substring(0, 60) + '...' : target;
+      targetEl.textContent = short || '-';
+      targetEl.title = target || '';
+    }
+
+    // Show a live, message-driven countdown between scenarios
     if (timerEl) {
-      if (delay > 0) {
-        let remaining = Math.ceil(delay / 1000); // Convertir en secondes
-        timerEl.textContent = `Prochaine commande dans: ${remaining}s`;
+      if (delay && delay > 0) {
+        // Format mm:ss (or s.ms for short delays)
+        let text;
+        if (delay >= 10000) {
+          const mins = Math.floor(delay / 60000);
+          const secs = Math.floor((delay % 60000) / 1000);
+          const mm = String(mins).padStart(2, '0');
+          const ss = String(secs).padStart(2, '0');
+          text = `${mm}:${ss}`;
+        } else if (delay >= 1000) {
+          const secs = (delay / 1000).toFixed(1).replace(/\.0$/, '');
+          text = `${secs}s`;
+        } else {
+          text = `${delay}ms`;
+        }
+        timerEl.textContent = `Prochain scénario dans: ${text}`;
         timerEl.style.display = 'block';
-        
-        // Démarrer le décompte
-        countdownInterval = setInterval(() => {
-          remaining--;
-          if (remaining <= 0) {
-            clearInterval(countdownInterval);
-            countdownInterval = null;
-            timerEl.style.display = 'none';
-          } else {
-            timerEl.textContent = `Prochaine commande dans: ${remaining}s`;
-          }
-        }, 1000);
       } else {
         timerEl.style.display = 'none';
       }
     }
-    
+
     if (errorBox) errorBox.style.display = 'none';
   }
 
