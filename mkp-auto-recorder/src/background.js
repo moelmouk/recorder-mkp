@@ -31,6 +31,72 @@ let playbackState = {
 let eventLogs = [];
 const MAX_EVENT_LOGS = 500;
 
+function sanitizeRequestHeaders(headers) {
+  const out = {};
+  if (!headers || typeof headers !== 'object') return out;
+
+  const forbidden = new Set([
+    'host',
+    'connection',
+    'content-length',
+    'origin',
+    'referer',
+    'user-agent',
+    'accept-encoding'
+  ]);
+
+  for (const [kRaw, vRaw] of Object.entries(headers)) {
+    const k = String(kRaw || '').toLowerCase();
+    if (!k) continue;
+    if (forbidden.has(k)) continue;
+    if (k.startsWith('sec-')) continue;
+    if (k.startsWith('proxy-')) continue;
+    if (k.startsWith('cf-')) continue;
+    if (k === 'cookie' || k === 'set-cookie') continue;
+    if (typeof vRaw === 'undefined' || vRaw === null) continue;
+    out[k] = String(vRaw);
+  }
+  return out;
+}
+
+async function executeApiRequestCommand(cmd) {
+  const url = cmd.Target || '';
+  if (!url) throw new Error('apiRequest: URL manquante');
+
+  const method = String(cmd.Method || cmd.method || 'GET').toUpperCase();
+  const headers = sanitizeRequestHeaders(cmd.Headers || cmd.headers || {});
+
+  let body = cmd.Value;
+  if (typeof body !== 'string') {
+    try { body = JSON.stringify(body); } catch (e) { body = String(body || ''); }
+  }
+
+  const init = {
+    method,
+    headers
+  };
+
+  const hasBody = method !== 'GET' && method !== 'HEAD';
+  if (hasBody && body) {
+    init.body = body;
+    if (!('content-type' in headers) && body.trim().startsWith('{')) {
+      init.headers = { ...headers, 'content-type': 'application/json' };
+    }
+  }
+
+  const res = await fetch(url, init);
+  const status = res.status;
+  if (!res.ok) {
+    let details = '';
+    try {
+      const t = await res.text();
+      details = t ? t.substring(0, 300) : '';
+    } catch (e) {}
+    throw new Error(`apiRequest: HTTP ${status}${details ? ' - ' + details : ''}`);
+  }
+  return { status };
+}
+
 // ========== STATE PERSISTENCE ==========
 
 async function saveState() {
@@ -193,7 +259,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         ...message.command,
         timing: timing,
         timestamp: now,
-        disabled: false
+        disabled: (message.command && typeof message.command.disabled === 'boolean') ? message.command.disabled : false
       };
       
       currentScenario.Commands.push(commandWithTiming);
@@ -901,6 +967,37 @@ async function executeScenario(scenario, tabId, useRealTiming, playbackMode = 'R
             playbackState.status = 'stopped';
             return false;
           }
+          continue;
+        }
+
+        // Handle 'apiRequest' command (execute from background)
+        if (cmd.Command && cmd.Command.toLowerCase() === 'apirequest') {
+          try {
+            await chrome.tabs.sendMessage(tabId, {
+              type: 'UPDATE_PLAYBACK_OVERLAY',
+              current: i + 1,
+              total: scenario.Commands.length,
+              command: cmd,
+              delay: 0,
+              infoText: 'Envoi requête API au serveur...'
+            });
+          } catch (e) {
+            // ignore overlay errors
+          }
+
+          await executeApiRequestCommand(cmd);
+
+          try {
+            await chrome.tabs.sendMessage(tabId, {
+              type: 'UPDATE_PLAYBACK_OVERLAY',
+              current: i + 1,
+              total: scenario.Commands.length,
+              command: cmd,
+              delay: 0,
+              infoText: ''
+            });
+          } catch (e) {}
+
           continue;
         }
 

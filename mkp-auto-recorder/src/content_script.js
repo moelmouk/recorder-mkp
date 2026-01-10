@@ -458,10 +458,12 @@
       targetEl.title = target || '';
     }
 
-    // Show a live, message-driven countdown between scenarios
     if (timerEl) {
-      if (delay && delay > 0) {
-        // Format mm:ss (or s.ms for short delays)
+      const infoText = command && typeof command.infoText === 'string' ? command.infoText : '';
+      if (infoText) {
+        timerEl.textContent = infoText;
+        timerEl.style.display = 'block';
+      } else if (delay && delay > 0) {
         let text;
         if (delay >= 10000) {
           const mins = Math.floor(delay / 60000);
@@ -1190,6 +1192,128 @@
   let recordedCommands = [];
   let lastRecordedValueByEl = new WeakMap();
   let inputDebounceTimersByEl = new WeakMap();
+  
+  const MODAL_OPEN_BUTTON_ID = 'market-place_borrower_comparator_comparator-header_button_open-warranties-modal';
+  const MODAL_VALIDATE_BUTTON_ID = 'market-place_borrower_comparator_comparator-header_loans-warranties-modal_update-warranties';
+  
+  let isModalInteractionSuppressed = false;
+  let awaitingNetworkCapture = null;
+  let networkRequestsRing = [];
+  const MAX_NETWORK_REQUESTS = 50;
+  let networkMessageListenerAttached = false;
+
+  function isIdLocatorFor(locatorTarget, expectedId) {
+    if (!locatorTarget || typeof locatorTarget !== 'string') return false;
+    return locatorTarget === `id=${expectedId}`;
+  }
+
+  function shouldSuppressRecording() {
+    return isModalInteractionSuppressed || !!awaitingNetworkCapture;
+  }
+
+  function ensureNetworkInterceptorInjected() {
+    try {
+      if (document.getElementById('mkp-network-interceptor')) return;
+      const script = document.createElement('script');
+      script.id = 'mkp-network-interceptor';
+      script.src = chrome.runtime.getURL('src/network_interceptor.js');
+      script.async = false;
+      (document.documentElement || document.head || document.body).appendChild(script);
+    } catch (e) {
+      console.log('MKP: could not inject network interceptor:', e);
+    }
+  }
+
+  function attachNetworkMessageListener() {
+    if (networkMessageListenerAttached) return;
+    networkMessageListenerAttached = true;
+    window.addEventListener('message', (event) => {
+      try {
+        if (event.source !== window) return;
+        const data = event.data;
+        if (!data || data.source !== 'mkp-network-interceptor' || data.kind !== 'request') return;
+
+        const entry = {
+          ts: Number(data.ts) || Date.now(),
+          url: String(data.url || ''),
+          method: String(data.method || 'GET').toUpperCase(),
+          headers: (data.headers && typeof data.headers === 'object') ? data.headers : {},
+          body: String(data.body || '')
+        };
+        
+        // Debug log for all captured requests
+        console.log('[MKP] Network request captured:', {
+          method: entry.method,
+          url: entry.url,
+          headers: entry.headers,
+          body: entry.body,
+          timestamp: new Date(entry.ts).toISOString()
+        });
+
+        networkRequestsRing.push(entry);
+        if (networkRequestsRing.length > MAX_NETWORK_REQUESTS) {
+          networkRequestsRing = networkRequestsRing.slice(networkRequestsRing.length - MAX_NETWORK_REQUESTS);
+        }
+
+        if (awaitingNetworkCapture && typeof awaitingNetworkCapture.resolve === 'function') {
+          if (entry.ts >= awaitingNetworkCapture.sinceTs) {
+            const isWriteMethod = entry.method === 'POST' || entry.method === 'PUT' || entry.method === 'PATCH' || entry.method === 'DELETE';
+            if (isWriteMethod) {
+              const resolve = awaitingNetworkCapture.resolve;
+              clearTimeout(awaitingNetworkCapture.timeoutId);
+              awaitingNetworkCapture = null;
+              resolve(entry);
+            }
+          }
+        }
+      } catch (e) {}
+    }, false);
+  }
+
+  async function captureNextNetworkRequestAndRecordCommand() {
+    const sinceTs = Date.now();
+    console.log('[MKP] En attente de la prochaine requête réseau...');
+
+    const request = await new Promise((resolve) => {
+      const timeoutId = setTimeout(() => {
+        console.log('[MKP] Timeout: Aucune requête réseau capturée dans le délai imparti');
+        if (awaitingNetworkCapture && awaitingNetworkCapture.sinceTs === sinceTs) {
+          awaitingNetworkCapture = null;
+        }
+        resolve(null);
+      }, 6000);
+
+      awaitingNetworkCapture = { sinceTs, resolve, timeoutId };
+    });
+
+    if (!request) {
+      console.log('[MKP] Aucune requête réseau capturée');
+      return;
+    }
+
+    console.log('[MKP] Requête réseau capturée:', {
+      url: request.url,
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+      timestamp: new Date().toISOString()
+    });
+
+    const apiCommand = {
+      Command: 'apiRequest',
+      Target: request.url,
+      Value: request.body || '',
+      Targets: [],
+      Description: '',
+      Method: request.method,
+      Headers: request.headers
+    };
+
+    recordedCommands.push(apiCommand);
+    console.log('[MKP] Commande apiRequest ajoutée au scénario:', apiCommand);
+    chrome.runtime.sendMessage({ type: 'COMMAND_RECORDED', command: apiCommand });
+    updateCommandCount(recordedCommands.length);
+  }
 
   // ========== EVENT HANDLERS ==========
 
@@ -1200,6 +1324,40 @@
 
     const target = e.target;
     const locator = getLocator(target);
+
+    const isModalOpen = !!(target && typeof target.closest === 'function' && target.closest(`#${MODAL_OPEN_BUTTON_ID}`));
+    const isModalValidate = !!(target && typeof target.closest === 'function' && target.closest(`#${MODAL_VALIDATE_BUTTON_ID}`));
+    if (!isModalOpen && !isModalValidate && shouldSuppressRecording()) {
+      return;
+    }
+
+    if (isModalOpen) {
+      isModalInteractionSuppressed = true;
+      const command = {
+        Command: 'click',
+        Target: locator.Target,
+        Value: '',
+        Targets: locator.Targets,
+        Description: '',
+        disabled: true
+      };
+
+      recordedCommands.push(command);
+      chrome.runtime.sendMessage({ type: 'COMMAND_RECORDED', command: command });
+      
+      highlightElement(target);
+      updateCommandCount(recordedCommands.length);
+      console.log('MKP Recorded (modal open - disabled):', command);
+      return;
+    }
+
+    if (isModalValidate && isModalInteractionSuppressed) {
+      isModalInteractionSuppressed = false;
+      ensureNetworkInterceptorInjected();
+      attachNetworkMessageListener();
+      captureNextNetworkRequestAndRecordCommand().catch(() => {});
+      return;
+    }
 
     const isProfessionOptionClick = (locator.Target || '').includes('profession_input-select_') && !(locator.Target || '').endsWith('jobRefId') && !(locator.Target || '').includes('_jobRefId');
     if (isProfessionOptionClick) {
@@ -1256,6 +1414,7 @@
     if (!isRecording) return;
     if (e.target.closest('#mkp-recording-indicator')) return;
     if (e.target.closest('#mkp-playback-overlay')) return;
+    if (shouldSuppressRecording()) return;
 
     const target = e.target;
     const tagName = target.tagName.toLowerCase();
@@ -1297,6 +1456,7 @@
     if (!isRecording) return;
     if (e.target.closest('#mkp-recording-indicator')) return;
     if (e.target.closest('#mkp-playback-overlay')) return;
+    if (shouldSuppressRecording()) return;
 
     const target = e.target;
     const tagName = target.tagName.toLowerCase();
@@ -1344,6 +1504,11 @@
   const startRecording = () => {
     isRecording = true;
     recordedCommands = [];
+    isModalInteractionSuppressed = false;
+    awaitingNetworkCapture = null;
+    networkRequestsRing = [];
+    ensureNetworkInterceptorInjected();
+    attachNetworkMessageListener();
     document.addEventListener('click', recordClick, true);
     document.addEventListener('input', recordInput, true);
     document.addEventListener('change', recordChange, true);
@@ -1352,6 +1517,8 @@
 
   const stopRecording = () => {
     isRecording = false;
+    isModalInteractionSuppressed = false;
+    awaitingNetworkCapture = null;
     document.removeEventListener('click', recordClick, true);
     document.removeEventListener('input', recordInput, true);
     document.removeEventListener('change', recordChange, true);
@@ -1416,6 +1583,9 @@
         break;
       case 'UPDATE_PLAYBACK_OVERLAY':
         console.log('UPDATE_PLAYBACK_OVERLAY received with delay:', message.delay);
+        if (message.command && typeof message.infoText === 'string') {
+          message.command.infoText = message.infoText;
+        }
         updatePlaybackOverlay(message.current, message.total, message.command, message.delay || 0);
         sendResponse({ success: true });
         break;

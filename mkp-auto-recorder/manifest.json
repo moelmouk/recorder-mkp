@@ -30,5 +30,11 @@
       "run_at": "document_end",
       "all_frames": false
     }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/network_interceptor.js"],
+      "matches": ["<all_urls>"]
+    }
   ]
 }
