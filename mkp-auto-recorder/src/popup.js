@@ -145,25 +145,39 @@ async function saveTheme(theme) {
 // ==================== PLAYBACK MODE (RWRT | RAC) ====================
 function updatePlayButtonTitle() {
   if (elements.btnPlay) {
-    const mode = state.playbackMode === 'RAC' ? 'RAC' : 'RWRT';
-    elements.btnPlay.title = mode === 'RAC' ? 'Lire séquentiellement (RAC)' : 'Rejouer le scénario (RWRT)';
+    let mode = 'RWRT';
+    if (state.playbackMode === 'RAC') mode = 'RAC';
+    else if (state.playbackMode === 'HYBRID') mode = 'HYBRID';
+    if (mode === 'RAC') {
+      elements.btnPlay.title = 'Lire séquentiellement (RAC)';
+    } else if (mode === 'HYBRID') {
+      elements.btnPlay.title = 'Mode HYBRID: RWRT par défaut, RAC si tag';
+    } else {
+      elements.btnPlay.title = 'Rejouer le scénario (RWRT)';
+    }
   }
 }
 
 async function loadPlaybackMode() {
   try {
     const result = await chrome.storage.local.get(['mkpPlaybackMode']);
-    const mode = result && result.mkpPlaybackMode === 'RAC' ? 'RAC' : 'RWRT';
+    const raw = result && result.mkpPlaybackMode;
+    console.log('[DEBUG_LOG] loadPlaybackMode: raw from storage =', raw);
+    const mode = (raw === 'RAC' || raw === 'HYBRID') ? raw : 'RWRT';
     state.playbackMode = mode;
+    console.log('[DEBUG_LOG] loadPlaybackMode: state.playbackMode set to', mode);
     if (elements.playbackModeSelect) elements.playbackModeSelect.value = mode;
   } catch (e) {
+    console.log('[DEBUG_LOG] loadPlaybackMode: error, defaulting to RWRT', e);
     state.playbackMode = 'RWRT';
   }
   updatePlayButtonTitle();
 }
 
 async function savePlaybackMode(mode) {
-  const m = mode === 'RAC' ? 'RAC' : 'RWRT';
+  let m = 'RWRT';
+  if (mode === 'RAC') m = 'RAC';
+  else if (mode === 'HYBRID') m = 'HYBRID';
   try {
     await chrome.storage.local.set({ mkpPlaybackMode: m });
   } catch (e) {
@@ -268,6 +282,7 @@ function buildCurrentScenarioJson() {
       };
       if (cmd.Value) out.Value = cmd.Value;
       if (typeof cmd.timing === 'number') out.timing = cmd.timing;
+      if (cmd.algoType === 'RAC' || cmd.algoType === 'RWRT') out.algoType = cmd.algoType;
       return out;
     });
 
@@ -581,18 +596,12 @@ function waitMs(ms) {
 }
 
 async function executeAllCommands() {
+  console.log('[DEBUG_LOG] executeAllCommands() appelée - Mode RAC actif');
+  
   if (state.isPlaying) return;
 
   const commands = Array.isArray(state.currentScenario?.Commands) ? state.currentScenario.Commands : [];
   if (commands.length === 0) return;
-
-  // Work only with enabled commands for RAC progression
-  const activeIndexes = commands.map((c, idx) => (!c?.disabled ? idx : -1)).filter(i => i >= 0);
-  const totalToPlay = activeIndexes.length;
-  if (totalToPlay === 0) {
-    showStatus('error', 'Aucune action active à lire');
-    return;
-  }
 
   state.isPlaying = true;
   showStatus('playing', 'Lecture séquentielle en cours...');
@@ -602,71 +611,28 @@ async function executeAllCommands() {
   if (elements.btnPlay) elements.btnPlay.disabled = true;
   if (elements.btnStart) elements.btnStart.disabled = true;
 
-  // Determine active tab and open playback overlay via background
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const tabId = tab?.id;
   try {
-    await chrome.runtime.sendMessage({ type: 'RAC_START', tabId, total: totalToPlay });
-  } catch (e) {
-    console.warn('RAC_START error (overlay may not appear):', e);
-  }
+    let playedCount = 0;
+    const totalToPlay = commands.filter(cmd => !cmd?.disabled).length;
+    if (totalToPlay === 0) {
+      showStatus('error', 'Aucune action active à lire');
+      return;
+    }
 
-  let aborted = false;
-  try {
-    for (let playedCount = 0; playedCount < totalToPlay; playedCount++) {
-      const cmdIndex = activeIndexes[playedCount];
-      const cmd = commands[cmdIndex];
+    for (let i = 0; i < commands.length; i++) {
+      if (commands[i]?.disabled) continue;
 
-      // Handle pause/stop via background playback state
-      while (true) {
-        let st;
-        try {
-          const resp = await chrome.runtime.sendMessage({ type: 'GET_PLAYBACK_STATE' });
-          st = resp?.state;
-        } catch (e) {
-          st = null;
-        }
-        const status = st?.status || 'playing';
-        if (status === 'stopped') { aborted = true; break; }
-        if (status === 'paused') { await waitMs(200); continue; }
-        break; // playing
-      }
-      if (aborted) break;
+      playedCount++;
+      updateGlobalProgress(playedCount, totalToPlay);
+      showStatus('playing', `Lecture ${playedCount}/${totalToPlay}...`);
 
-      // Update overlay with current progress and next command info
-      try {
-        await chrome.runtime.sendMessage({
-          type: 'RAC_UPDATE',
-          current: playedCount,
-          total: totalToPlay,
-          command: cmd?.Command || '',
-          delay: 0
-        });
-      } catch {}
-
-      // Update popup progress and status
-      updateGlobalProgress(playedCount + 1, totalToPlay);
-      showStatus('playing', `Lecture ${playedCount + 1}/${totalToPlay}...`);
-
-      // Execute the command
-      await executeSingleCommand(cmdIndex, { bypassPlayingGuard: true });
-
-      // Small spacing delay between commands (kept from previous behavior)
+      await executeSingleCommand(i, { bypassPlayingGuard: true });
       await waitMs(500);
     }
 
-    if (!aborted) {
-      updateGlobalProgress(totalToPlay, totalToPlay);
-      showStatus('success', 'Lecture séquentielle terminée');
-    } else {
-      showStatus('error', 'Lecture arrêtée');
-    }
+    updateGlobalProgress(totalToPlay, totalToPlay);
+    showStatus('success', 'Lecture séquentielle terminée');
   } finally {
-    // Close overlay if we finished normally; if user stopped, background already hid it via STOP_PLAYBACK
-    if (!aborted) {
-      try { await chrome.runtime.sendMessage({ type: 'RAC_END' }); } catch {}
-    }
-
     state.isPlaying = false;
     if (elements.btnPlayAll) elements.btnPlayAll.disabled = state.currentScenario.Commands.length === 0;
     if (elements.btnPlay) elements.btnPlay.disabled = state.currentScenario.Commands.length === 0;
@@ -676,13 +642,18 @@ async function executeAllCommands() {
 }
 
 elements.btnPlay.addEventListener('click', async () => {
+  console.log('[DEBUG_LOG] btnPlay clicked, state.playbackMode =', state.playbackMode);
+  
   // If playback mode is RAC (Read All Commands), run sequential executor and return
   if (state.playbackMode === 'RAC') {
+    console.log('[DEBUG_LOG] Mode RAC détecté, appel de executeAllCommands()');
     await executeAllCommands();
     return;
   }
 
-  // Default RWRT (Read With Real Time) behavior
+  console.log('[DEBUG_LOG] Mode HYBRID ou RWRT, passage par background PLAY_SCENARIO');
+  
+  // HYBRID and RWRT go through background PLAY_SCENARIO; HYBRID will switch per-command timing internally
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !tab.id) {
     showStatus('error', 'Impossible de lancer');
@@ -707,7 +678,8 @@ elements.btnPlay.addEventListener('click', async () => {
   await chrome.runtime.sendMessage({
     type: 'PLAY_SCENARIO',
     tabId: tab.id,
-    useRealTiming: true
+    useRealTiming: true,
+    playbackMode: state.playbackMode || 'RWRT'
   });
 
   logEvent({
@@ -715,7 +687,7 @@ elements.btnPlay.addEventListener('click', async () => {
     category: 'playback',
     action: 'play_scenario',
     message: 'Lecture scénario (popup)',
-    data: { tabId: tab.id, commands: scenarioToPlay.Commands.length, useRealTiming: true }
+    data: { tabId: tab.id, commands: scenarioToPlay.Commands.length, useRealTiming: true, playbackMode: state.playbackMode || 'RWRT' }
   });
 
   pollPlaybackState();
@@ -1149,6 +1121,15 @@ function editCommand(index) {
         Désactiver cette action (ignorée lors de la lecture)
       </label>
     </div>
+    <div class="form-group">
+      <label>Algorithme pour cette action</label>
+      <select id="editAlgoType">
+        <option value="DEFAULT" ${(cmd.algoType !== 'RAC' && cmd.algoType !== 'RWRT') ? 'selected' : ''}>Par défaut (RWRT)</option>
+        <option value="RWRT" ${cmd.algoType === 'RWRT' ? 'selected' : ''}>Forcer RWRT</option>
+        <option value="RAC" ${cmd.algoType === 'RAC' ? 'selected' : ''}>Forcer RAC</option>
+      </select>
+      <small class="help-text">Utilisé uniquement si le mode de lecture est HYBRID. Par défaut, RWRT est appliqué.</small>
+    </div>
   `;
 
   elements.editModal.classList.add('active');
@@ -1174,6 +1155,14 @@ elements.modalSave.addEventListener('click', () => {
     cmd.Value = document.getElementById('editValue').value;
     cmd.timing = parseInt(document.getElementById('editTiming').value) || 0;
     cmd.disabled = document.getElementById('editDisabled').checked;
+
+    // Save per-command algorithm type (for HYBRID mode)
+    const algoSel = document.getElementById('editAlgoType');
+    if (algoSel) {
+      const v = algoSel.value;
+      if (v === 'RAC' || v === 'RWRT') cmd.algoType = v;
+      else delete cmd.algoType; // DEFAULT
+    }
     
     renderCommands();
     syncToBackground();
@@ -2276,7 +2265,8 @@ elements.groupPlayStart.addEventListener('click', async () => {
     scenarios: scenariosToPlay,
     tabId: tab.id,
     useRealTiming: useRealTiming,
-    interScenarioDelayMs: state.groupInterScenarioDelayMs
+    interScenarioDelayMs: state.groupInterScenarioDelayMs,
+    playbackMode: state.playbackMode || 'RWRT'
   });
 
   pollGroupPlayback(scenariosToPlay.length);
@@ -2880,7 +2870,7 @@ async function executeSingleCommand(index, options = {}) {
       // Essayer d'abord d'injecter le script s'il n'est pas déjà chargé
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        files: ['content_script.js']
+        files: ['src/content_script.js']
       });
     } catch (injectError) {
       console.log('Le script de contenu est déjà injecté ou une erreur est survenue:', injectError);

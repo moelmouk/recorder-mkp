@@ -58,3 +58,10 @@ Exemples de scénarios : Bibliothèque d'exemples pour différents cas d'utilisa
 - Le délai configuré est appliqué après la fin d’un scénario et avant le démarrage du suivant (A → délai → B).
 - L’overlay de lecture affiche désormais un compteur "Prochain scénario dans: …" mis à jour en temps réel.
 - Le compteur se fige en pause et reprend à la reprise; il disparaît à la fin/arrêt/erreur.
+
+09-01-2026: Mode HYBRID — correction de l'implémentation du timing par commande
+- Ajout du paramètre `playbackMode` à la fonction `executeScenario` dans background.js.
+- Implémentation de la logique HYBRID: en mode HYBRID, les commandes avec `algoType='RAC'` ignorent les délais `timing`, tandis que les commandes sans tag ou avec `algoType='RWRT'` respectent les délais.
+- Mise à jour de `handlePlayScenario` et `handlePlayGroup` pour transmettre le paramètre `playbackMode` à `executeScenario`.
+- Ajout de logs de débogage pour indiquer quand une commande RAC ignore le timing en mode HYBRID.
+- Le mode HYBRID fonctionne maintenant correctement pour la lecture de scénarios individuels et de groupes.

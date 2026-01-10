@@ -236,9 +236,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         category: 'playback',
         action: 'play_scenario',
         message: 'Lecture scénario',
-        data: { tabId: message.tabId, useRealTiming: message.useRealTiming !== false }
+        data: { tabId: message.tabId, useRealTiming: message.useRealTiming !== false, playbackMode: message.playbackMode || 'RWRT' }
       });
-      handlePlayScenario(message.tabId, message.useRealTiming !== false);
+      handlePlayScenario(message.tabId, message.useRealTiming !== false, message.playbackMode || 'RWRT');
       sendResponse({ success: true });
       break;
 
@@ -248,13 +248,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         category: 'playback',
         action: 'play_group',
         message: 'Lecture groupe',
-        data: { tabId: message.tabId, count: Array.isArray(message.scenarios) ? message.scenarios.length : 0, useRealTiming: message.useRealTiming !== false, interScenarioDelayMs: Number(message.interScenarioDelayMs) }
+        data: { tabId: message.tabId, count: Array.isArray(message.scenarios) ? message.scenarios.length : 0, useRealTiming: message.useRealTiming !== false, interScenarioDelayMs: Number(message.interScenarioDelayMs), playbackMode: message.playbackMode || 'RWRT' }
       });
       handlePlayGroup(
         message.scenarios,
         message.tabId,
         message.useRealTiming !== false,
-        Number.isFinite(Number(message.interScenarioDelayMs)) ? Number(message.interScenarioDelayMs) : 500
+        Number.isFinite(Number(message.interScenarioDelayMs)) ? Number(message.interScenarioDelayMs) : 500,
+        message.playbackMode || 'RWRT'
       );
       sendResponse({ success: true });
       break;
@@ -555,7 +556,7 @@ async function handleStopRecording(tabId) {
 
 // ========== PLAYBACK HANDLERS ==========
 
-async function handlePlayScenario(tabId, useRealTiming = true) {
+async function handlePlayScenario(tabId, useRealTiming = true, playbackMode = 'RWRT') {
   if (isPlaying) {
     console.log('Already playing');
     return;
@@ -604,7 +605,7 @@ async function handlePlayScenario(tabId, useRealTiming = true) {
   }
 
   const scenarioToPlay = { ...currentScenario, Commands: activeCommands };
-  await executeScenario(scenarioToPlay, tabId, useRealTiming);
+  await executeScenario(scenarioToPlay, tabId, useRealTiming, playbackMode);
 
   // Hide playback overlay
   try {
@@ -632,7 +633,7 @@ async function handlePlayScenario(tabId, useRealTiming = true) {
   await saveState();
 }
 
-async function handlePlayGroup(scenarios, tabId, useRealTiming = true, interScenarioDelayMs = 500) {
+async function handlePlayGroup(scenarios, tabId, useRealTiming = true, interScenarioDelayMs = 500, playbackMode = 'RWRT') {
   if (isPlaying) {
     console.log('Already playing');
     return;
@@ -704,7 +705,7 @@ async function handlePlayGroup(scenarios, tabId, useRealTiming = true, interScen
     console.log(`Playing scenario ${i + 1}/${scenarios.length}: ${scenario.Name}`);
 
     const scenarioToPlay = { ...scenario, Commands: activeCommands };
-    const success = await executeScenario(scenarioToPlay, tabId, useRealTiming);
+    const success = await executeScenario(scenarioToPlay, tabId, useRealTiming, playbackMode);
     
     if (!success && playbackState.status === 'stopped') {
       break;
@@ -765,7 +766,7 @@ async function handlePlayGroup(scenarios, tabId, useRealTiming = true, interScen
   await saveState();
 }
 
-async function executeScenario(scenario, tabId, useRealTiming) {
+async function executeScenario(scenario, tabId, useRealTiming, playbackMode = 'RWRT') {
   const waitIfPaused = async () => {
     while (isPlaying && playbackState.status === 'paused') {
       await new Promise(r => setTimeout(r, 200));
@@ -837,9 +838,17 @@ async function executeScenario(scenario, tabId, useRealTiming) {
     }
 
     // Apply real timing delay
-    if (useRealTiming && cmd.timing && cmd.timing > 0 && i > 0) {
+    // In HYBRID mode, skip timing if command is tagged as RAC
+    let shouldApplyTiming = useRealTiming && cmd.timing && cmd.timing > 0 && i > 0;
+    if (shouldApplyTiming && playbackMode === 'HYBRID' && cmd.algoType === 'RAC') {
+      console.log(`HYBRID mode: skipping timing for RAC command ${i + 1}`);
+      shouldApplyTiming = false;
+    }
+    
+    if (shouldApplyTiming) {
       const delay = Math.min(cmd.timing, 10000);
-      console.log(`Waiting ${delay}ms (real timing)`);
+      const modeInfo = playbackMode === 'HYBRID' ? ` (HYBRID-RWRT)` : '';
+      console.log(`Waiting ${delay}ms (real timing${modeInfo})`);
       const ok = await controlledDelay(delay);
       if (!ok) {
         playbackState.status = 'stopped';
