@@ -839,7 +839,7 @@ async function executeScenario(scenario, tabId, useRealTiming, playbackMode = 'R
 
     // Apply real timing delay
     // In HYBRID mode, skip timing if command is tagged as RAC
-    let shouldApplyTiming = useRealTiming && cmd.timing && cmd.timing > 0 && i > 0;
+    let shouldApplyTiming = useRealTiming && cmd.timing && cmd.timing > 0;
     if (shouldApplyTiming && playbackMode === 'HYBRID' && cmd.algoType === 'RAC') {
       console.log(`HYBRID mode: skipping timing for RAC command ${i + 1}`);
       shouldApplyTiming = false;
