@@ -1350,6 +1350,21 @@
     recordedCommands.push(apiCommand);
     console.log('[MKP] Commande apiRequest ajoutée au scénario:', apiCommand);
     chrome.runtime.sendMessage({ type: 'COMMAND_RECORDED', command: apiCommand });
+
+    // Ajouter automatiquement une commande refreshPage après apiRequest
+    const refreshCommand = {
+      Command: 'refreshPage',
+      Target: '',
+      Value: 'SPECIAL NEEDS CMD',
+      Targets: [],
+      Description: '',
+      timing: 2000
+    };
+
+    recordedCommands.push(refreshCommand);
+    console.log('[MKP] Commande refreshPage ajoutée automatiquement après apiRequest:', refreshCommand);
+    chrome.runtime.sendMessage({ type: 'COMMAND_RECORDED', command: refreshCommand });
+
     updateCommandCount(recordedCommands.length);
   }
 
