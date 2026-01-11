@@ -73,7 +73,8 @@ async function executeApiRequestCommand(cmd) {
 
   const init = {
     method,
-    headers
+    headers,
+    credentials: 'include'
   };
 
   const hasBody = method !== 'GET' && method !== 'HEAD';
@@ -95,6 +96,187 @@ async function executeApiRequestCommand(cmd) {
     throw new Error(`apiRequest: HTTP ${status}${details ? ' - ' + details : ''}`);
   }
   return { status };
+}
+
+function isNeedsEndpoint(url) {
+  try {
+    return /\/projects\/[a-f0-9]{24}\/needs(\?|$)/i.test(String(url || ''));
+  } catch (e) {
+    return false;
+  }
+}
+
+function stripUnderscoreKeys(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(stripUnderscoreKeys);
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (String(k).startsWith('__')) continue;
+    out[k] = stripUnderscoreKeys(v);
+  }
+  return out;
+}
+
+function buildNeedsPayloadWithCurrentIds(recordedPayload, liveNeed) {
+  if (!recordedPayload || typeof recordedPayload !== 'object') {
+    throw new Error('apiRequest needs: payload invalide');
+  }
+  if (!liveNeed || typeof liveNeed !== 'object') {
+    throw new Error('apiRequest needs: réponse GET /needs invalide');
+  }
+
+  const recordedNeeds = Array.isArray(recordedPayload.needs) ? recordedPayload.needs : [];
+  const liveNeeds = Array.isArray(liveNeed.needs) ? liveNeed.needs : [];
+
+  if (recordedNeeds.length === 0) {
+    throw new Error('apiRequest needs: payload.needs vide');
+  }
+  if (liveNeeds.length === 0) {
+    throw new Error('apiRequest needs: GET /needs ne retourne aucune loan');
+  }
+
+  const out = {
+    ...recordedPayload,
+    projectType: recordedPayload.projectType || liveNeed.projectType || 'borrower',
+    needs: []
+  };
+
+  for (let i = 0; i < recordedNeeds.length; i++) {
+    const rNeed = recordedNeeds[i];
+    const lNeed = liveNeeds[i];
+    if (!lNeed) {
+      throw new Error(`apiRequest needs: impossible de mapper la loan index ${i} (pas assez de loans dans le projet courant)`);
+    }
+
+    const rInsuredNeeds = Array.isArray(rNeed.insuredNeeds) ? rNeed.insuredNeeds : [];
+    const lInsuredNeeds = Array.isArray(lNeed.insuredNeeds) ? lNeed.insuredNeeds : [];
+    if (rInsuredNeeds.length > lInsuredNeeds.length) {
+      throw new Error(`apiRequest needs: impossible de mapper contributors pour la loan index ${i} (attendu ${rInsuredNeeds.length}, courant ${lInsuredNeeds.length})`);
+    }
+
+    const newNeed = {
+      ...rNeed,
+      loanId: lNeed.loanId,
+      insuredNeeds: []
+    };
+
+    for (let j = 0; j < rInsuredNeeds.length; j++) {
+      const rIns = rInsuredNeeds[j];
+      const lIns = lInsuredNeeds[j];
+      if (!lIns) {
+        throw new Error(`apiRequest needs: contributor manquant (loan index ${i}, contributor index ${j})`);
+      }
+      const newIns = {
+        ...rIns,
+        contributorId: lIns.contributorId,
+        warranties: Array.isArray(rIns.warranties) ? rIns.warranties : []
+      };
+      newNeed.insuredNeeds.push(newIns);
+    }
+
+    out.needs.push(newNeed);
+  }
+
+  return stripUnderscoreKeys(out);
+}
+
+async function executeDynamicNeedsPutCommand(cmd, tabId) {
+  console.log('[MKP] ===== DÉBUT EXÉCUTION PUT /needs =====');
+  
+  const needsContext = await chrome.tabs.sendMessage(tabId, { type: 'GET_NEEDS_CONTEXT' });
+  const contextUrl = needsContext?.context?.url || '';
+  const contextHeaders = needsContext?.context?.headers || {};
+
+  console.log('[MKP] Contexte des besoins récupéré:', { contextUrl, hasHeaders: !!Object.keys(contextHeaders).length });
+
+  if (!contextUrl || !isNeedsEndpoint(contextUrl)) {
+    throw new Error('apiRequest needs: URL GET /needs du projet courant introuvable (recharge la page avant replay)');
+  }
+
+  let recordedPayload;
+  try {
+    recordedPayload = JSON.parse(cmd.Value || '{}');
+    console.log('[MKP] Payload original:', JSON.parse(JSON.stringify(recordedPayload)));
+  } catch (e) {
+    console.error('[MKP] Erreur de parsing du payload:', e);
+    throw new Error('apiRequest needs: payload JSON illisible');
+  }
+
+  const getHeaders = sanitizeRequestHeaders(contextHeaders);
+  console.log('[MKP] Envoi requête GET pour récupérer le contexte actuel...');
+  
+  const getRes = await fetch(contextUrl, { 
+    method: 'GET', 
+    headers: getHeaders, 
+    credentials: 'include' 
+  });
+  
+  if (!getRes.ok) {
+    const errorText = await getRes.text().catch(() => '');
+    console.error('[MKP] Erreur GET /needs:', { status: getRes.status, statusText: getRes.statusText, body: errorText });
+    throw new Error(`apiRequest needs: GET /needs HTTP ${getRes.status}`);
+  }
+  
+  const live = await getRes.json();
+  const liveNeed = live?.need || null;
+  
+  console.log('[MKP] Contexte actuel récupéré:', {
+    projectId: live?.projectId,
+    loans: liveNeed?.needs?.map(n => n.loanId) || [],
+    contributors: liveNeed?.needs?.[0]?.insuredNeeds?.map(i => i.contributorId) || []
+  });
+
+  const newPayload = buildNeedsPayloadWithCurrentIds(recordedPayload, liveNeed);
+  console.log('[MKP] Nouveau payload après remappage:', JSON.parse(JSON.stringify(newPayload)));
+
+  const putHeaders = sanitizeRequestHeaders(cmd.Headers || cmd.headers || contextHeaders || {});
+  if (!('content-type' in putHeaders)) {
+    putHeaders['content-type'] = 'application/json';
+  }
+
+  console.log('[MKP] Envoi requête PUT avec headers:', putHeaders);
+  console.log('[MKP] Corps de la requête PUT:', JSON.stringify(newPayload, null, 2));
+
+  try {
+    const putRes = await fetch(contextUrl, {
+      method: 'PUT',
+      headers: putHeaders,
+      credentials: 'include',
+      body: JSON.stringify(newPayload)
+    });
+
+    const responseHeaders = {};
+    putRes.headers.forEach((value, key) => {
+      responseHeaders[key] = value;
+    });
+
+    const responseText = await putRes.text();
+    let responseData;
+    try {
+      responseData = responseText ? JSON.parse(responseText) : null;
+    } catch (e) {
+      responseData = responseText;
+    }
+
+    console.log('[MKP] Réponse du serveur:', {
+      status: putRes.status,
+      statusText: putRes.statusText,
+      headers: responseHeaders,
+      body: responseData
+    });
+
+    if (!putRes.ok) {
+      throw new Error(`apiRequest needs: PUT HTTP ${putRes.status} - ${responseText?.substring(0, 300) || ''}`);
+    }
+
+    return { 
+      status: putRes.status,
+      data: responseData
+    };
+  } catch (error) {
+    console.error('[MKP] Erreur lors de l\'exécution de la requête PUT:', error);
+    throw error;
+  }
 }
 
 // ========== STATE PERSISTENCE ==========
@@ -985,7 +1167,13 @@ async function executeScenario(scenario, tabId, useRealTiming, playbackMode = 'R
             // ignore overlay errors
           }
 
-          await executeApiRequestCommand(cmd);
+          const apiMethod = String(cmd.Method || cmd.method || 'GET').toUpperCase();
+          const isNeedsPut = apiMethod === 'PUT' && isNeedsEndpoint(cmd.Target);
+          if (isNeedsPut) {
+            await executeDynamicNeedsPutCommand(cmd, tabId);
+          } else {
+            await executeApiRequestCommand(cmd);
+          }
 
           try {
             await chrome.tabs.sendMessage(tabId, {

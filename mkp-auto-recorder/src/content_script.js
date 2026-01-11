@@ -1201,6 +1201,32 @@
   let networkRequestsRing = [];
   const MAX_NETWORK_REQUESTS = 50;
   let networkMessageListenerAttached = false;
+  let lastNeedsContext = { url: '', headers: {} };
+
+  function shouldEnableNetworkInterceptor() {
+    try {
+      return /(^|\.)april-on\.fr$/i.test(window.location.hostname);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function tryDiscoverNeedsContextFromPerformance() {
+    try {
+      if (lastNeedsContext && lastNeedsContext.url) return;
+      if (!window.performance || typeof window.performance.getEntriesByType !== 'function') return;
+      const entries = window.performance.getEntriesByType('resource') || [];
+      for (let i = entries.length - 1; i >= 0; i--) {
+        const name = entries[i] && entries[i].name ? String(entries[i].name) : '';
+        if (!name) continue;
+        if (/\/projects\/[a-f0-9]{24}\/needs(\?|$)/i.test(name)) {
+          lastNeedsContext = { url: name, headers: {} };
+          console.log('[MKP] Needs endpoint discovered from performance entries:', lastNeedsContext.url);
+          return;
+        }
+      }
+    } catch (e) {}
+  }
 
   function isIdLocatorFor(locatorTarget, expectedId) {
     if (!locatorTarget || typeof locatorTarget !== 'string') return false;
@@ -1249,6 +1275,18 @@
           body: entry.body,
           timestamp: new Date(entry.ts).toISOString()
         });
+
+        try {
+          let fullUrl = entry.url;
+          if (fullUrl && fullUrl.startsWith('/')) {
+            fullUrl = new URL(fullUrl, window.location.origin).href;
+          }
+          const isNeedsGet = entry.method === 'GET' && /\/projects\/[a-f0-9]{24}\/needs(\?|$)/i.test(fullUrl);
+          if (isNeedsGet) {
+            lastNeedsContext = { url: fullUrl, headers: entry.headers || {} };
+            console.log('[MKP] Detected current project needs endpoint:', lastNeedsContext.url);
+          }
+        } catch (e) {}
 
         networkRequestsRing.push(entry);
         if (networkRequestsRing.length > MAX_NETWORK_REQUESTS) {
@@ -1614,6 +1652,16 @@
       case 'GET_COMMANDS':
         sendResponse({ commands: recordedCommands });
         break;
+      case 'GET_NEEDS_CONTEXT':
+        console.log('[MKP] GET_NEEDS_CONTEXT - Contexte actuel:', {
+          url: lastNeedsContext.url,
+          hasHeaders: !!Object.keys(lastNeedsContext.headers || {}).length,
+          performanceEntries: window.performance?.getEntriesByType('resource')
+            ?.filter(e => e.name.includes('/needs'))
+            .map(e => e.name)
+        });
+        sendResponse({ success: true, context: lastNeedsContext });
+        break;
       case 'EXECUTE_COMMAND':
         executeCommand(message.command).then(result => {
           sendResponse(result);
@@ -1652,6 +1700,12 @@
     }
     return true;
   });
+
+  if (shouldEnableNetworkInterceptor()) {
+    ensureNetworkInterceptorInjected();
+    attachNetworkMessageListener();
+    tryDiscoverNeedsContextFromPerformance();
+  }
 
   // Check if should be recording on injection
   chrome.runtime.sendMessage({ type: 'GET_RECORDING_STATE' }, (response) => {
