@@ -1101,6 +1101,7 @@ function editCommand(index) {
         <option value="pause" ${cmd.Command === 'pause' ? 'selected' : ''}>pause</option>
         <option value="open" ${cmd.Command === 'open' ? 'selected' : ''}>open</option>
         <option value="apiRequest" ${cmd.Command === 'apiRequest' ? 'selected' : ''}>apiRequest</option>
+        <option value="refreshPage" ${cmd.Command === 'refreshPage' ? 'selected' : ''}>refreshPage</option>
         <option value="waitForVisible" ${cmd.Command === 'waitForVisible' ? 'selected' : ''}>waitForVisible</option>
       </select>
     </div>

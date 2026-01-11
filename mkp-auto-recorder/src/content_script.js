@@ -2166,7 +2166,7 @@
         return { success: true };
       }
 
-      case 'refresh':
+      case 'refreshpage':
         window.location.reload();
         return { success: true };
 
