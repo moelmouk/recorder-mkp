@@ -1933,6 +1933,55 @@
 
     console.log('MKP Executing:', command, target, value);
 
+    // Vérifier si c'est une commande apiRequest
+  if (command === 'apirequest' || command === 'apiRequest') {
+    try {
+      const method = cmd.Method || 'GET';
+      
+      // Récupérer le contexte des besoins pour les en-têtes d'authentification
+      const needsContext = await new Promise(resolve => {
+        chrome.runtime.sendMessage({ type: 'GET_NEEDS_CONTEXT' }, resolve);
+      });
+      
+      // Utiliser les en-têtes du contexte ou des en-têtes vides par défaut
+      const contextHeaders = needsContext?.context?.headers || {};
+      
+      // Fusionner les en-têtes : d'abord ceux du contexte, puis ceux de la commande
+      const headers = {
+        'Content-Type': 'application/json',
+        ...contextHeaders,
+        ...(cmd.Headers || {}) // Les en-têtes de la commande écrasent ceux du contexte
+      };
+      
+      const body = value ? JSON.parse(value) : undefined;
+      
+      console.log('[MKP] Exécution requête API vers:', target);
+      console.log('[MKP] Méthode:', method);
+      console.log('[MKP] En-têtes:', Object.keys(headers));
+      
+      const response = await fetch(target, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        credentials: 'include' // Important pour les cookies de session
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`HTTP ${response.status} - ${response.statusText}: ${errorText.substring(0, 200)}`);
+      }
+      
+      const responseData = await response.json().catch(() => null);
+      return { success: true, data: responseData };
+    } catch (error) {
+      console.error('[MKP] Erreur lors de l\'exécution de la requête API:', error);
+      return { 
+        success: false, 
+        error: `Erreur API: ${error.message || 'Erreur inconnue'}` 
+      };
+    }
+  }
+
     switch (command) {
       case 'open':
         if (target) window.location.href = target;

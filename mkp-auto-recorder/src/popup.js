@@ -1100,6 +1100,7 @@ function editCommand(index) {
         <option value="uncheck" ${cmd.Command === 'uncheck' ? 'selected' : ''}>uncheck</option>
         <option value="pause" ${cmd.Command === 'pause' ? 'selected' : ''}>pause</option>
         <option value="open" ${cmd.Command === 'open' ? 'selected' : ''}>open</option>
+        <option value="apiRequest" ${cmd.Command === 'apiRequest' ? 'selected' : ''}>apiRequest</option>
         <option value="waitForVisible" ${cmd.Command === 'waitForVisible' ? 'selected' : ''}>waitForVisible</option>
       </select>
     </div>
