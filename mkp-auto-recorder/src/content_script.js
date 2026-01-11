@@ -2190,5 +2190,30 @@
     }
   }
 
+  // Écouter les réponses réseau pour détecter le chargement complet de la page
+  window.addEventListener('message', function(event) {
+    try {
+      if (event.source !== window) return;
+      if (!event.data || event.data.source !== 'mkp-network-interceptor') return;
+      if (event.data.kind !== 'response') return;
+      
+      const { url, method, status, ok } = event.data;
+      
+      // Vérifier si c'est la requête rate API avec un statut 200
+      if (method === 'GET' && url && url.includes('/fr/distribution/sales/projects/') && url.includes('/rate')) {
+        if (status === 200 && ok) {
+          console.log('[MKP] Page chargée avec succès - Requête rate API retournée avec status 200:', url);
+          
+          // Notifier le background script que la page est complètement chargée
+          try {
+            chrome.runtime.sendMessage({ type: 'RATE_API_SUCCESS' });
+          } catch (e) {
+            console.log('[MKP] Erreur lors de l\'envoi du message RATE_API_SUCCESS:', e);
+          }
+        }
+      }
+    } catch (e) {}
+  });
+
   console.log('MKP Auto Recorder content script v2.1 loaded');
 })();
